@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
+from io import BytesIO
 
 st.set_page_config(page_title="Финансовый ИИ-Агент", layout="wide")
 
@@ -55,7 +56,7 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
         <div class="metric-box">
             <p>• Расходы за прошлый месяц: <b>{total_old:,.2f} руб.</b></p>
             <p>• Расходы за текущий месяц: <b>{total_new:,.2f} руб.</b></p>
-            <p>• Изменение расходов всего ДЦ: <b>{delta:+,.2f} руб.</b></p>
+            <p>• Изменение расходов всего ДЦ: <b>{total_new - total_old:+,.2f} руб.</b></p>
         </div>
         
         <h2>ТОП-10 главных изменений в статьях расходов</h2>
@@ -91,134 +92,118 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
     """
     return html
 
-def parse_and_analyze():
-    """Основная функция логики приложения"""
-    wb_old = openpyxl.load_workbook(old_file, data_only=True)
-    wb_new = openpyxl.load_workbook(new_file, data_only=True)
+# Основная логика по условию загрузки файлов
+if old_file and new_file:
+    st.success("Файлы успешно загружены! Начинаю факторный анализ...")
     
-    common_sheets = list(set(wb_old.sheetnames).intersection(set(wb_new.sheetnames)))
-    
-    if not common_sheets:
-        st.error("❌ Ошибка: В файлах нет листов с одинаковыми названиями!")
-        return
+    try:
+        # ЗАЩИТА СТРИМА: Клонируем файлы в независимые буферы памяти BytesIO
+        old_data = BytesIO(old_file.read())
+        new_data = BytesIO(new_file.read())
         
-    all_expenses_changes = []
-    total_old_dc = 0.0
-    total_new_dc = 0.0
-    total_row_found = False
-    header_idx = int(header_row)
-    
-    for sheet_name in common_sheets:
-        ws_old = wb_old[sheet_name]
-        ws_new = wb_new[sheet_name]
+        # Считываем книги из сохраненных буферов
+        wb_old = openpyxl.load_workbook(old_data, data_only=True)
+        wb_new = openpyxl.load_workbook(new_data, data_only=True)
         
-        target_col_idx_old, value_col_idx_old = None, None
-        target_col_idx_new, value_col_idx_new = None, None
+        common_sheets = list(set(wb_old.sheetnames).intersection(set(wb_new.sheetnames)))
         
-        for col in range(1, ws_old.max_column + 1):
-            val = str(ws_old.cell(row=header_idx, column=col).value).strip()
-            if val == target_column: target_col_idx_old = col
-            if val == value_column: value_col_idx_old = col
-                
-        for col in range(1, ws_new.max_column + 1):
-            val = str(ws_new.cell(row=header_idx, column=col).value).strip()
-            if val == target_column: target_col_idx_new = col
-            if val == value_column: value_col_idx_new = col
-        
-        if target_col_idx_old and value_col_idx_old and target_col_idx_new and value_col_idx_new:
-            dict_old = {}
-            for r in range(header_idx + 1, ws_old.max_row + 1):
-                cell_art = ws_old.cell(row=r, column=target_col_idx_old)
-                cell_val = ws_old.cell(row=r, column=value_col_idx_old)
-                if cell_art.value is not None:
-                    art_str = str(cell_art.value).strip()
-                    if art_str.lower() == total_row_name.lower().strip():
-                        try: total_old_dc += float(cell_val.value or 0)
-                        except: pass
-                        total_row_found = True
-                        continue
-                    if is_colored(cell_art):
-                        continue
-                    dict_old[art_str] = cell_val.value
-
-            dict_new = {}
-            for r in range(header_idx + 1, ws_new.max_row + 1):
-                cell_art = ws_new.cell(row=r, column=target_col_idx_new)
-                cell_val = ws_new.cell(row=r, column=value_col_idx_new)
-                if cell_art.value is not None:
-                    art_str = str(cell_art.value).strip()
-                    if art_str.lower() == total_row_name.lower().strip():
-                        try: total_new_dc += float(cell_val.value or 0)
-                        except: pass
-                        continue
-                    if is_colored(cell_art):
-                        continue
-                    dict_new[art_str] = cell_val.value
-            
-            sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
-            for article in sheet_articles:
-                if article == "" or any(word in article.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
-                    continue
-                try: val_old = float(dict_old.get(article, 0) or 0)
-                except: val_old = 0.0
-                try: val_new = float(dict_new.get(article, 0) or 0)
-                except: val_new = 0.0
-                
-                item_delta = val_new - val_old
-                abs_delta = abs(item_delta)
-                
-                if abs_delta > 0:
-                    all_expenses_changes.append({
-                        "Лист": sheet_name,
-                        "Статья расходов": article,
-                        "Было (руб.)": val_old,
-                        "Стало (руб.)": val_new,
-                        "Изменение (руб.)": item_delta,
-                        "Абсолютное влияние (руб.)": abs_delta
-                    })
-    
-    dc_delta = total_new_dc - total_old_dc
-    
-    st.subheader("📊 Общий финансовый результат по ДЦ")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
-    with c2:
-        st.metric("Расходы за текущий месяц", f"{total_new_dc:,.2f} руб.")
-    with c3:
-        st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
-        
-    if not total_row_found:
-        st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах.")
-    
-    if all_expenses_changes:
-        df_total_changes = pd.DataFrame(all_expenses_changes)
-        top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
-        
-        if total_old_dc > 0:
-            top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes["Изменение (руб.)"] / total_old_dc * 100
+        if not common_sheets:
+            st.error("❌ Ошибка: В файлах нет листов с одинаковыми названиями!")
         else:
-            top_10_changes["Доля во влиянии на общую разницу"] = 0.0
-        
-        top_10_display = top_10_changes.drop(columns=["Абсолютное влияние (руб.)"], errors='ignore').reset_index(drop=True)
-        top_10_display.index = top_10_display.index + 1
-        
-        st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
-        st.write("Суммирующие строки отделов отфильтрованы по цвету заливки. Показываются только прямые статьи расходов:")
-        st.dataframe(top_10_display, use_container_width=True)
-        
-        st.write("---")
-        st.subheader("📥 Экспорт отчета")
-        
-        html_report = convert_df_to_html_report(total_old_dc, total_new_dc, dc_delta, top_10_display)
-        
-        st.download_button(
-            label="📄 Скачать директорский отчет (HTML)",
-            data=html_report,
-            file_name="Director_Financial_Report.html",
-            mime="text/html"
-        )
-        st.caption("💡 Подсказка: Откройте скачанный файл в браузере и нажмите Ctrl+P (или 'Печать'), чтобы мгновенно сохранить его как идеальный PDF.")
-    else:
-        st.info("📊 Изменений по расходам между отчетами не найдено.")
+            all_expenses_changes = []
+            total_old_dc = 0.0
+            total_new_dc = 0.0
+            total_row_found = False
+            header_idx = int(header_row)
+            
+            for sheet_name in common_sheets:
+                ws_old = wb_old[sheet_name]
+                ws_new = wb_new[sheet_name]
+                
+                target_col_idx_old, value_col_idx_old = None, None
+                target_col_idx_new, value_col_idx_new = None, None
+                
+                for col in range(1, ws_old.max_column + 1):
+                    val = str(ws_old.cell(row=header_idx, column=col).value).strip()
+                    if val == target_column: target_col_idx_old = col
+                    if val == value_column: value_col_idx_old = col
+                        
+                for col in range(1, ws_new.max_column + 1):
+                    val = str(ws_new.cell(row=header_idx, column=col).value).strip()
+                    if val == target_column: target_col_idx_new = col
+                    if val == value_column: value_col_idx_new = col
+                
+                if target_col_idx_old and value_col_idx_old and target_col_idx_new and value_col_idx_new:
+                    dict_old = {}
+                    for r in range(header_idx + 1, ws_old.max_row + 1):
+                        cell_art = ws_old.cell(row=r, column=target_col_idx_old)
+                        cell_val = ws_old.cell(row=r, column=value_col_idx_old)
+                        if cell_art.value is not None:
+                            art_str = str(cell_art.value).strip()
+                            if art_str.lower() == total_row_name.lower().strip():
+                                try: total_old_dc += float(cell_val.value or 0)
+                                except: pass
+                                total_row_found = True
+                                continue
+                            if is_colored(cell_art):
+                                continue
+                            dict_old[art_str] = cell_val.value
 
+                    dict_new = {}
+                    for r in range(header_idx + 1, ws_new.max_row + 1):
+                        cell_art = ws_new.cell(row=r, column=target_col_idx_new)
+                        cell_val = ws_new.cell(row=r, column=value_col_idx_new)
+                        if cell_art.value is not None:
+                            art_str = str(cell_art.value).strip()
+                            if art_str.lower() == total_row_name.lower().strip():
+                                try: total_new_dc += float(cell_val.value or 0)
+                                except: pass
+                                continue
+                            if is_colored(cell_art):
+                                continue
+                            dict_new[art_str] = cell_val.value
+                    
+                    sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
+                    for article in sheet_articles:
+                        if article == "" or any(word in article.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
+                            continue
+                        try: val_old = float(dict_old.get(article, 0) or 0)
+                        except: val_old = 0.0
+                        try: val_new = float(dict_new.get(article, 0) or 0)
+                        except: val_new = 0.0
+                        
+                        item_delta = val_new - val_old
+                        abs_delta = abs(item_delta)
+                        
+                        if abs_delta > 0:
+                            all_expenses_changes.append({
+                                "Лист": sheet_name,
+                                "Статья расходов": article,
+                                "Было (руб.)": val_old,
+                                "Стало (руб.)": val_new,
+                                "Изменение (руб.)": item_delta,
+                                "Абсолютное влияние (руб.)": abs_delta
+                            })
+            
+            dc_delta = total_new_dc - total_old_dc
+            
+            st.subheader("📊 Общий финансовый результат по ДЦ")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
+            with c2:
+                st.metric("Расходы за текущий месяц", f"{total_new_dc:,.2f} руб.")
+            with c3:
+                st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
+                
+            if not total_row_found:
+                st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах.")
+            
+            if all_expenses_changes:
+                df_total_changes = pd.DataFrame(all_expenses_changes)
+                top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
+                
+                if total_old_dc > 0:
+                    top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes["Изменение (руб.)"] / total_old_dc * 100
+                else:
+                    top_10_changes["Доля во влиянии на общую разницу"] = 0.0
