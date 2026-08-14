@@ -70,7 +70,7 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
                 <th class="right">Было (руб.)</th>
                 <th class="right">Стало (руб.)</th>
                 <th class="right">Изменение (руб.)</th>
-                <th class="right">Доля в ДЦ</th>
+                <th class="right">Доля во влиянии на общую разницу</th>
             </tr>
     """
     for idx, row in df_top10.iterrows():
@@ -82,7 +82,7 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
                 <td class="right">{row['Было (руб.)']:,.2f}</td>
                 <td class="right">{row['Стало (руб.)']:,.2f}</td>
                 <td class="right">{row['Изменение (руб.)']:+,.2f}</td>
-                <td class="right">{row['Доля в ДЦ']}</td>
+                <td class="right">{row['Доля во влиянии на общую разницу']}</td>
             </tr>
         """
     html += """
@@ -181,7 +181,7 @@ if old_file and new_file:
                             "Было (руб.)": val_old,
                             "Стало (руб.)": val_new,
                             "Изменение (руб.)": item_delta,
-                            "abs_vliyanie": abs_delta  # Заменяем имя на строго английское во избежание багов
+                            "abs_vliyanie": abs_delta
                         })
         
         dc_delta = total_new_dc - total_old_dc
@@ -189,9 +189,9 @@ if old_file and new_file:
         st.subheader("📊 Общий финансовый результат по ДЦ")
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("Расходы за прошлый ...", f"{total_old_dc:,.2f} руб.")
+            st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
         with c2:
-            st.metric("Расходы за текущий ...", f"{total_new_dc:,.2f} руб.")
+            st.metric("Расходы за текущий месяц", f"{total_new_dc:,.2f} руб.")
         with c3:
             st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
             
@@ -200,17 +200,15 @@ if old_file and new_file:
         
         if all_expenses_changes:
             df_total_changes = pd.DataFrame(all_expenses_changes)
-            
-            # Сортируем по английскому ключу без риска опечаток
             top_10_changes = df_total_changes.sort_values(by="abs_vliyanie", ascending=False).head(10)
             
-            # Рассчитываем процент текстом со знаком %
+            # Рассчитываем процент текстом со знаком % и называем колонку одинаково везде
             if total_old_dc > 0:
-                top_10_changes["Доля в ДЦ"] = top_10_changes.apply(
+                top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(
                     lambda row: f"{row['Изменение (руб.)'] / total_old_dc * 100:+.2f}%", axis=1
                 )
             else:
-                top_10_changes["Доля в ДЦ"] = "0.00%"
+                top_10_changes["Доля во влиянии на общую разницу"] = "0.00%"
             
             top_10_display = top_10_changes.drop(columns=["abs_vliyanie"], errors='ignore').reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
