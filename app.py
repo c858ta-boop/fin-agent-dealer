@@ -1,10 +1,12 @@
 import streamlit as st
 import pandas as pd
+import openpyxl
+from io import BytesIO
 
 st.set_page_config(page_title="Финансовый ИИ-Агент", layout="wide")
 
 st.title("🚗 Финансовый Автономный Агент Дилерского Центра")
-st.write("Инструмент выявления ТОП-10 изменений в статьях расходов относительно прошлого месяца.")
+st.write("Инструмент выявления ТОП-10 изменений в статьях расходов (исключая цветные суммирующие строки).")
 
 # Панель настроек в боковой панели
 with st.sidebar:
@@ -20,6 +22,36 @@ with col1:
     old_file = st.file_uploader("📂 Загрузите СТАРЫЙ отчет (прошлый месяц)", type=["xlsx"])
 with col2:
     new_file = st.file_uploader("📂 Загрузите НОВЫЙ отчет (текущий месяц)", type=["xlsx"])
+
+def get_colored_rows(file_bytes, sheet_name, header_idx, target_col_name):
+    """Быстро находит строки, в которых ячейка со статьей расходов имеет цветную заливку"""
+    colored_rows = set()
+    try:
+        wb = openpyxl.load_workbook(file_bytes, data_only=True, read_only=True)
+        if sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            
+            # Ищем индекс нужного столбца по строке заголовков
+            target_col_idx = None
+            header_row_cells = list(ws.iter_rows(min_row=header_idx, max_row=header_idx, values_only=False))[0]
+            for idx, cell in enumerate(header_row_cells, start=1):
+                if str(cell.value).strip() == target_col_name:
+                    target_col_idx = idx
+                    break
+            
+            # Если столбец найден, проверяем только его ячейки построчно
+            if target_col_idx:
+                for row_idx in range(header_idx + 1, ws.max_row + 1):
+                    cell = ws.cell(row=row_idx, column=target_col_idx)
+                    if cell.fill and cell.fill.fill_type:
+                        color = cell.fill.start_color.index
+                        if color and str(color) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
+                            # В pandas индексы строк будут сдвинуты, так как header_row стала заголовком.
+                            # Строка row_idx в Excel соответствует индексу (row_idx - header_idx - 1) в df
+                            colored_rows.add(row_idx - header_idx - 1)
+    except Exception as e:
+        pass
+    return colored_rows
 
 def convert_df_to_html_report(total_old, total_new, delta, df_top10):
     """Создает простой HTML-отчет для печати в PDF"""
@@ -49,6 +81,7 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
         </div>
         
         <h2>ТОП-10 главных изменений в статьях расходов</h2>
+        <p><i>В отчет включены только прямые статьи расходов (цветные промежуточные итоги исключены).</i></p>
         
         <table>
             <tr>
@@ -81,13 +114,17 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
     return html
 
 if old_file and new_file:
-    st.info("Файлы получены. Запускаю базовый расчёт таблиц...")
+    st.info("Файлы получены. Запускаю глубокий анализ с фильтрацией по цвету...")
     
     try:
         pandas_header_index = int(header_row) - 1
         
-        old_excel = pd.ExcelFile(old_file)
-        new_excel = pd.ExcelFile(new_file)
+        # Фиксируем данные файлов в памяти, чтобы прочитать дважды без сбоев
+        old_bytes_1 = old_file.read()
+        new_bytes_1 = new_file.read()
+        
+        old_excel = pd.ExcelFile(BytesIO(old_bytes_1))
+        new_excel = pd.ExcelFile(BytesIO(new_bytes_1))
         common_sheets = list(set(old_excel.sheet_names).intersection(set(new_excel.sheet_names)))
         
         all_expenses_changes = []
@@ -96,34 +133,41 @@ if old_file and new_file:
         total_row_found = False
         
         for sheet in common_sheets:
-            df_old = pd.read_excel(old_file, sheet_name=sheet, header=pandas_header_index)
-            df_new = pd.read_excel(new_file, sheet_name=sheet, header=pandas_header_index)
+            df_old = pd.read_excel(BytesIO(old_bytes_1), sheet_name=sheet, header=pandas_header_index)
+            df_new = pd.read_excel(BytesIO(new_bytes_1), sheet_name=sheet, header=pandas_header_index)
             
             df_old.columns = [str(c).strip() for c in df_old.columns]
             df_new.columns = [str(c).strip() for c in df_new.columns]
             
             if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
                 
-                df_old_clean = df_old.dropna(subset=[target_column, value_column])
-                df_new_clean = df_new.dropna(subset=[target_column, value_column])
+                # Быстро сканируем openpyxl только этот лист на предмет цветных строк
+                colored_old_rows = get_colored_rows(BytesIO(old_bytes_1), sheet, int(header_row), target_column)
+                colored_new_rows = get_colored_rows(BytesIO(new_bytes_1), sheet, int(header_row), target_column)
+                
+                # Вытаскиваем "Всего по ДЦ" до очистки (даже если финотдел покрасил этот тотал)
+                for i, row in df_old.iterrows():
+                    if str(row[target_column]).strip().lower() == total_row_name.lower().strip():
+                        try: total_old_dc += float(row[value_column])
+                        except: pass
+                        total_row_found = True
+                for i, row in df_new.iterrows():
+                    if str(row[target_column]).strip().lower() == total_row_name.lower().strip():
+                        try: total_new_dc += float(row[value_column])
+                        except: pass
+                
+                # Фильтруем датафреймы — выкидываем цветные строки
+                df_old_clean = df_old.drop(index=list(colored_old_rows), errors='ignore').dropna(subset=[target_column, value_column])
+                df_new_clean = df_new.drop(index=list(colored_new_rows), errors='ignore').dropna(subset=[target_column, value_column])
                 
                 dict_old = pd.Series(df_old_clean[value_column].values, index=df_old_clean[target_column]).to_dict()
                 dict_new = pd.Series(df_new_clean[value_column].values, index=df_new_clean[target_column]).to_dict()
                 
-                for k, v in dict_old.items():
-                    if str(k).strip().lower() == total_row_name.lower().strip():
-                        try: total_old_dc += float(v)
-                        except: pass
-                        total_row_found = True
-                        
-                for k, v in dict_new.items():
-                    if str(k).strip().lower() == total_row_name.lower().strip():
-                        try: total_new_dc += float(v)
-                        except: pass
-                
                 sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
                 for article in sheet_articles:
                     article_str = str(article).strip()
+                    
+                    # Стандартный текстовый фильтр итогов
                     if article_str == "" or any(word in article_str.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
                         continue
                         
@@ -158,39 +202,3 @@ if old_file and new_file:
             
         if all_expenses_changes:
             df_total_changes = pd.DataFrame(all_expenses_changes)
-            top_10_changes = df_total_changes.sort_values(by="сортировка_влияния", ascending=False).head(10)
-            
-            if total_old_dc > 0:
-                top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(
-                    lambda row: f"{row['Изменение (руб.)'] / total_old_dc * 100:+.2f}%", axis=1
-                )
-            else:
-                top_10_changes["Доля во влиянии на общую разницу"] = "0.00%"
-            
-            top_10_display = top_10_changes.drop(columns=["сортировка_влияния"]).reset_index(drop=True)
-            top_10_display.index = top_10_display.index + 1
-            
-            st.subheader("📋 Директорский отчет: ТОП-10 изменений")
-            st.dataframe(top_10_display, use_container_width=True)
-            
-            # КНОПКА СКАЧИВАНИЯ ОТЧЕТА ДЛЯ ПЕЧАТИ В PDF
-            st.write("---")
-            st.subheader("📥 Экспорт отчета")
-            
-            html_report = convert_df_to_html_report(total_old_dc, total_new_dc, dc_delta, top_10_display)
-            
-            st.download_button(
-                label="📄 Скачать отчет для сохранения в PDF",
-                data=html_report,
-                file_name="Director_Financial_Report.html",
-                mime="text/html"
-            )
-            st.caption("💡 Как сделать PDF: Откройте скачанный файл и нажмите Ctrl+P (или Cmd+P на Mac) -> выберите 'Сохранить как PDF'.")
-            
-        else:
-            st.info("📊 Изменений по статьям расходов между отчетами не обнаружено.")
-            
-    except Exception as e:
-        st.error(f"⚠️ Произошла непредвиденная ошибка: {e}")
-else:
-    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
