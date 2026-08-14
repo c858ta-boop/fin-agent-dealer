@@ -57,13 +57,13 @@ if old_file and new_file:
             target_col_idx_old, value_col_idx_old = None, None
             target_col_idx_new, value_col_idx_new = None, None
             
-            header_row_cells_old = list(ws_old.iter_rows(min_row=header_idx, max_row=header_idx, values_only=False))[0]
+            header_row_cells_old = list(ws_old.iter_rows(min_row=header_idx, max_row=header_idx, values_only=False))
             for idx, cell in enumerate(header_row_cells_old, start=1):
                 if str(cell.value).strip() == target_column:
                     target_col_idx_old = idx
                     break
             
-            header_row_cells_new = list(ws_new.iter_rows(min_row=header_idx, max_row=header_idx, values_only=False))[0]
+            header_row_cells_new = list(ws_new.iter_rows(min_row=header_idx, max_row=header_idx, values_only=False))
             for idx, cell in enumerate(header_row_cells_new, start=1):
                 if str(cell.value).strip() == target_column:
                     target_col_idx_new = idx
@@ -170,14 +170,11 @@ if old_file and new_file:
             st.write("---")
             st.subheader("📥 Экспорт отчета")
             
-            html_report = f"""
-            <html><head><meta charset="utf-8"><style>
-                body {{ font-family: Arial, sans-serif; margin: 30px; color: #333; }}
-                h2 {{ color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; }}
-                .metric-box {{ background: #F3F4F6; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
-                th {{ background: #1E3A8A; color: white; padding: 10px; text-align: left; font-size: 13px; }}
-                td {{ padding: 10px; border-bottom: 1px solid #E5E7EB; font-size: 12px; }}
-                tr:nth-child(even) {{ background: #F9FAFB; }}
-                .right {{ text-align: right; }}
-            </style></head><body>
+            # Создаем HTML без двойных фигурных скобок в f-строке, чтобы избежать синтаксического сбоя
+            html_report = "<html><head><meta charset='utf-8'><style>"
+            html_report += "body { font-family: Arial, sans-serif; margin: 30px; color: #333; }"
+            html_report += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; }"
+            html_report += ".metric-box { background: #F3F4F6; padding: 15px; border-radius: 5px; margin-bottom: 20px; }"
+            html_report += "table { width: 100%; border-collapse: collapse; margin-top: 15px; }"
+            html_report += "th { background: #1E3A8A; color: white; padding: 10px; text-align: left; font-size: 13px; }"
+            html_report += "td { padding: 10px; border-bottom: 1px solid #E5E7EB; font-size: 12px; }"
