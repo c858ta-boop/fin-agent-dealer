@@ -33,7 +33,7 @@ def is_colored(cell):
     return False
 
 def convert_df_to_html_report(total_old, total_new, delta, df_top10):
-    """Создает простой HTML-отчет, который браузер идеально сохраняет в PDF"""
+    """Создает простой HTML-отчет для печати в PDF"""
     html = f"""
     <html>
     <head>
@@ -82,7 +82,7 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
                 <td class="right">{row['Было (руб.)']:,.2f}</td>
                 <td class="right">{row['Стало (руб.)']:,.2f}</td>
                 <td class="right">{row['Изменение (руб.)']:+,.2f}</td>
-                <td class="right">{row['Доля во влиянии на общую разницу']}</td>
+                <td class="right">{row['Доля в ДЦ']}</td>
             </tr>
         """
     html += """
@@ -200,17 +200,18 @@ if old_file and new_file:
         
         if all_expenses_changes:
             df_total_changes = pd.DataFrame(all_expenses_changes)
-            top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
+            top_10_changes = df_total_changes.sort_values(by="Aбсолютное влияние (руб.)", ascending=False).head(10)
             
-            # Рассчитываем процент текстом, чтобы избежать багов форматирования таблиц
+            # Рассчитываем процент и сразу называем колонку коротко "Доля в ДЦ"
             if total_old_dc > 0:
-                top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(
+                top_10_changes["Доля в ДЦ"] = top_10_changes.apply(
                     lambda row: f"{row['Изменение (руб.)'] / total_old_dc * 100:+.2f}%", axis=1
                 )
             else:
-                top_10_changes["Доля во влиянии на общую разницу"] = "0.00%"
+                top_10_changes["Доля в ДЦ"] = "0.00%"
             
             top_10_display = top_10_changes.drop(columns=["Абсолютное влияние (руб.)"], errors='ignore').reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
             
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
+            st.write("Суммирующие строки отделов отфильтрованы по цвету заливки. Показываются только прямые статьи расходов:")
