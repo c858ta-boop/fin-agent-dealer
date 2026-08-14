@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
+import openpyxl
 
 st.set_page_config(page_title="Финансовый ИИ-Агент", layout="wide")
 
 st.title("🚗 Финансовый Автономный Агент Дилерского Центра")
-st.write("Анализ влияния отдельных статей расходов на изменение общего бюджета предприятия.")
+st.write("Анализ влияния первичных статей расходов (исключая цветные суммирующие строки отделов) на общий бюджет.")
 
 # Панель настроек в боковой панели
 with st.sidebar:
@@ -13,7 +14,7 @@ with st.sidebar:
     value_column = st.text_input("Название столбца со значениями (суммами):", value="Всего расходы")
     header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=2)
     total_row_name = st.text_input("Название строки общего итога:", value="Всего по ДЦ")
-    st.caption("ℹ️ Настройки оптимизированы под структуру ваших ежемесячных отчетов.")
+    st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветовую заливку.")
 
 # Блок загрузки файлов
 col1, col2 = st.columns(2)
@@ -22,14 +23,25 @@ with col1:
 with col2:
     new_file = st.file_uploader("📂 Загрузите НОВЫЙ отчет (текущий месяц)", type=["xlsx"])
 
+def is_colored(cell):
+    """Проверяет, есть ли у ячейки цветная заливка (игнорирует белый/прозрачный)"""
+    if cell.fill and cell.fill.fill_type:
+        # Если тип заливки solid и цвет не белый/прозрачный
+        color = cell.fill.start_color.index
+        # Обычные коды для "без заливки" или "белый" в openpyxl: '00000000', 0, 'FFFFFFFF'
+        if color and str(color) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
+            return True
+    return False
+
 if old_file and new_file:
-    st.success("Файлы успешно загружены! Начинаю факторный анализ расходов...")
+    st.success("Файлы успешно загружены! Начинаю факторный анализ с фильтрацией по цвету...")
     
     try:
-        old_excel = pd.ExcelFile(old_file)
-        new_excel = pd.ExcelFile(new_file)
+        # Сначала считываем файлы через openpyxl для анализа цветов ячеек
+        wb_old = openpyxl.load_workbook(old_file, data_only=True)
+        wb_new = openpyxl.load_workbook(new_file, data_only=True)
         
-        common_sheets = list(set(old_excel.sheet_names).intersection(set(new_excel.sheet_names)))
+        common_sheets = list(set(wb_old.sheetnames).intersection(set(wb_new.sheetnames)))
         
         if not common_sheets:
             st.error("❌ Ошибка: В файлах нет листов с одинаковыми названиями!")
@@ -39,61 +51,81 @@ if old_file and new_file:
             total_new_dc = 0.0
             total_row_found = False
             
-            pandas_header_index = int(header_row) - 1
+            header_idx = int(header_row)
             
-            # Первый проход: собираем только общие итоги по ДЦ для базы расчета
-            for sheet in common_sheets:
-                df_old = pd.read_excel(old_file, sheet_name=sheet, header=pandas_header_index)
-                df_new = pd.read_excel(new_file, sheet_name=sheet, header=pandas_header_index)
+            for sheet_name in common_sheets:
+                ws_old = wb_old[sheet_name]
+                ws_new = wb_new[sheet_name]
                 
-                df_old.columns = [str(c).strip() for c in df_old.columns]
-                df_new.columns = [str(c).strip() for c in df_new.columns]
+                # Ищем индексы нужных столбцов по строке заголовков
+                target_col_idx_old, value_col_idx_old = None, None
+                target_col_idx_new, value_col_idx_new = None, None
                 
-                if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
-                    df_old_clean = df_old.dropna(subset=[target_column, value_column])
-                    df_new_clean = df_new.dropna(subset=[target_column, value_column])
+                for col in range(1, ws_old.max_column + 1):
+                    val = str(ws_old.cell(row=header_idx, column=col).value).strip()
+                    if val == target_column: target_col_idx_old = col
+                    if val == value_column: value_col_idx_old = col
+                        
+                for col in range(1, ws_new.max_column + 1):
+                    val = str(ws_new.cell(row=header_idx, column=col).value).strip()
+                    if val == target_column: target_col_idx_new = col
+                    if val == value_column: value_col_idx_new = col
+                
+                # Если на этом листе структура совпала, разбираем его строчка за строчкой
+                if target_col_idx_old and value_col_idx_old and target_col_idx_new and value_col_idx_new:
                     
-                    dict_old = pd.Series(df_old_clean[value_column].values, index=df_old_clean[target_column]).to_dict()
-                    dict_new = pd.Series(df_new_clean[value_column].values, index=df_new_clean[target_column]).to_dict()
-                    
-                    for k, v in dict_old.items():
-                        if str(k).strip().lower() == total_row_name.lower().strip():
-                            try: total_old_dc += float(v)
-                            except: pass
-                            total_row_found = True
+                    # Собираем данные старого месяца
+                    dict_old = {}
+                    for r in range(header_idx + 1, ws_old.max_row + 1):
+                        cell_art = ws_old.cell(row=r, column=target_col_idx_old)
+                        cell_val = ws_old.cell(row=r, column=value_col_idx_old)
+                        
+                        if cell_art.value is not None:
+                            art_str = str(cell_art.value).strip()
                             
-                    for k, v in dict_new.items():
-                        if str(k).strip().lower() == total_row_name.lower().strip():
-                            try: total_new_dc += float(v)
-                            except: pass
+                            # Фиксируем тотал ДЦ, даже если он покрашен цветным
+                            if art_str.lower() == total_row_name.lower().strip():
+                                try: total_old_dc += float(cell_val.value or 0)
+                                except: pass
+                                total_row_found = True
+                                continue
+                                
+                            # Если строка цветная — пропускаем её!
+                            if is_colored(cell_art):
+                                continue
+                                
+                            dict_old[art_str] = cell_val.value
 
-            # Второй проход: собираем и анализируем статьи
-            for sheet in common_sheets:
-                df_old = pd.read_excel(old_file, sheet_name=sheet, header=pandas_header_index)
-                df_new = pd.read_excel(new_file, sheet_name=sheet, header=pandas_header_index)
-                
-                df_old.columns = [str(c).strip() for c in df_old.columns]
-                df_new.columns = [str(c).strip() for c in df_new.columns]
-                
-                if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
-                    df_old_clean = df_old.dropna(subset=[target_column, value_column])
-                    df_new_clean = df_new.dropna(subset=[target_column, value_column])
+                    # Собираем данные нового месяца
+                    dict_new = {}
+                    for r in range(header_idx + 1, ws_new.max_row + 1):
+                        cell_art = ws_new.cell(row=r, column=target_col_idx_new)
+                        cell_val = ws_new.cell(row=r, column=value_col_idx_new)
+                        
+                        if cell_art.value is not None:
+                            art_str = str(cell_art.value).strip()
+                            
+                            if art_str.lower() == total_row_name.lower().strip():
+                                try: total_new_dc += float(cell_val.value or 0)
+                                except: pass
+                                continue
+                                
+                            if is_colored(cell_art):
+                                continue
+                                
+                            dict_new[art_str] = cell_val.value
                     
-                    dict_old = pd.Series(df_old_clean[value_column].values, index=df_old_clean[target_column]).to_dict()
-                    dict_new = pd.Series(df_new_clean[value_column].values, index=df_new_clean[target_column]).to_dict()
-                    
+                    # Считаем разницу по чистым (белым) статьям
                     sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
                     
                     for article in sheet_articles:
-                        article_str = str(article).strip()
-                        
-                        if article_str == "" or any(word in article_str.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
+                        if article == "" or any(word in article.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
                             continue
                             
-                        try: val_old = float(dict_old.get(article, 0))
+                        try: val_old = float(dict_old.get(article, 0) or 0)
                         except: val_old = 0.0
                             
-                        try: val_new = float(dict_new.get(article, 0))
+                        try: val_new = float(dict_new.get(article, 0) or 0)
                         except: val_new = 0.0
                         
                         item_delta = val_new - val_old
@@ -101,15 +133,15 @@ if old_file and new_file:
                         
                         if abs_delta > 0:
                             all_expenses_changes.append({
-                                "Лист": sheet,
-                                "Статья расходов": article_str,
+                                "Лист": sheet_name,
+                                "Статья расходов": article,
                                 "Было (руб.)": val_old,
                                 "Стало (руб.)": val_new,
                                 "Изменение (руб.)": item_delta,
                                 "Абсолютное влияние (руб.)": abs_delta
                             })
             
-            # Выводим сводные результаты по ДЦ
+            # Расчет финальных результатов
             dc_delta = total_new_dc - total_old_dc
             
             st.subheader("📊 Общий финансовый результат по ДЦ")
@@ -122,34 +154,30 @@ if old_file and new_file:
                 st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
                 
             if not total_row_found:
-                st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах. Общий итог рассчитан как сумма листов.")
+                st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах.")
             
-            # Формируем финальный ТОП-10 статей
+            # Построение ТОП-10
             if all_expenses_changes:
                 df_total_changes = pd.DataFrame(all_expenses_changes)
-                
-                # Ранжируем по силе абсолютного изменения (чтобы в топ попали самые большие сдвиги)
                 top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
                 
-                # Считаем Долю влияния: Изменение / Расходы прошлого месяца
                 if total_old_dc > 0:
                     top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes["Изменение (руб.)"] / total_old_dc * 100
                 else:
                     top_10_changes["Доля во влиянии на общую разницу"] = 0.0
                 
-                # Убираем техническую колонку перед показом
                 top_10_display = top_10_changes.drop(columns=["Абсолютное влияние (руб.)"], errors='ignore').reset_index(drop=True)
                 top_10_display.index = top_10_display.index + 1
                 
-                st.subheader(f"📋 Директорский отчет: ТОП-10 главных изменений")
-                st.write("Эти 10 статей оказали самое сильное влияние на бюджет относительно прошлого месяца:")
+                st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
+                st.write("Суммирующие строки отделов отфильтрованы по цвету заливки. Показываются только прямые статьи расходов:")
                 
                 st.dataframe(
                     top_10_display.style.format({
                         "Было (руб.)": "{:,.2f}", 
                         "Стало (руб.)": "{:,.2f}", 
                         "Изменение (руб.)": "{:+,.2f}",
-                        "Доля во влиянии на общую разницу": "{:+,.2f}%"  # Покажет + или - перед процентом
+                        "Доля во влиянии на общую разницу": "{:+,.2f}%"
                     }),
                     use_container_width=True
                 )
