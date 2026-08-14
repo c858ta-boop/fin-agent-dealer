@@ -98,7 +98,7 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
     return html
 
 def run_analysis(old_bytes, new_bytes):
-    """Изолированная функция расчетов во избежание SyntaxError с блоками try-except"""
+    """Основная логика расчетов с выровненной структурой отступов"""
     pandas_header_index = int(header_row) - 1
     old_excel = pd.ExcelFile(BytesIO(old_bytes))
     new_excel = pd.ExcelFile(BytesIO(new_bytes))
