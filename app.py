@@ -31,6 +31,66 @@ def is_colored(cell):
             return True
     return False
 
+def convert_df_to_html_report(total_old, total_new, delta, df_top10):
+    """Создает простой HTML-отчет, который браузер идеально сохраняет в PDF"""
+    html = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 30px; color: #333; }}
+            h2 {{ color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; }}
+            .metric-box {{ background: #F3F4F6; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
+            th {{ background: #1E3A8A; color: white; padding: 10px; text-align: left; font-size: 14px; }}
+            td {{ padding: 10px; border-bottom: 1px solid #E5E7EB; font-size: 13px; }}
+            tr:nth-child(even) {{ background: #F9FAFB; }}
+            .right {{ text-align: right; }}
+        </style>
+    </head>
+    <body>
+        <h2>Финансовый отчет Дилерского Центра</h2>
+        <p><b>Факторный анализ изменений в статьях расходов</b></p>
+        
+        <div class="metric-box">
+            <p>• Расходы за прошлый месяц: <b>{total_old:,.2f} руб.</b></p>
+            <p>• Расходы за текущий месяц: <b>{total_new:,.2f} руб.</b></p>
+            <p>• Изменение расходов всего ДЦ: <b>{delta:+,.2f} руб.</b></p>
+        </div>
+        
+        <h2>ТОП-10 главных изменений в статьях расходов</h2>
+        <p><i>В отчет включены только прямые статьи расходов (цветные промежуточные итоги исключены).</i></p>
+        
+        <table>
+            <tr>
+                <th>№</th>
+                <th>Лист</th>
+                <th>Статья расходов</th>
+                <th class="right">Было (руб.)</th>
+                <th class="right">Стало (руб.)</th>
+                <th class="right">Изменение (руб.)</th>
+                <th class="right">Доля в ДЦ</th>
+            </tr>
+    """
+    for idx, row in df_top10.iterrows():
+        html += f"""
+            <tr>
+                <td>{idx}</td>
+                <td>{row['Лист']}</td>
+                <td>{row['Статья расходов']}</td>
+                <td class="right">{row['Было (руб.)']:,.2f}</td>
+                <td class="right">{row['Стало (руб.)']:,.2f}</td>
+                <td class="right">{row['Изменение (руб.)']:+,.2f}</td>
+                <td class="right">{row['Доля во влиянии на общую разницу']:.2f}%</td>
+            </tr>
+        """
+    html += """
+        </table>
+    </body>
+    </html>
+    """
+    return html
+
 def parse_and_analyze():
     """Основная функция логики приложения"""
     wb_old = openpyxl.load_workbook(old_file, data_only=True)
@@ -146,15 +206,18 @@ def parse_and_analyze():
         st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
         st.write("Суммирующие строки отделов отфильтрованы по цвету заливки. Показываются только прямые статьи расходов:")
         st.dataframe(top_10_display, use_container_width=True)
+        
+        st.write("---")
+        st.subheader("📥 Экспорт отчета")
+        
+        # Создаем HTML-версию отчета
+        html_report = convert_df_to_html_report(total_old_dc, total_new_dc, dc_delta, top_10_display)
+        
+        st.download_button(
+            label="📄 Скачать директорский отчет (HTML)",
+            data=html_report,
+            file_name="Director_Financial_Report.html",
+            mime="text/html"
+        )
+        st.caption("💡 Подсказка: Откройте скачанный файл в браузере и нажмите Ctrl+P (или 'Печать'), чтобы мгновенно сохранить его как идеальный PDF без искажения шрифтов.")
     else:
-        st.info("📊 Изменений по расходам между отчетами не найдено.")
-
-# Запуск по условию загрузки файлов
-if old_file and new_file:
-    st.success("Файлы успешно загружены! Начинаю факторный анализ...")
-    try:
-        parse_and_analyze()
-    except Exception as e:
-        st.error(f"⚠️ Произошла ошибка при анализе структуры Excel: {e}")
-else:
-    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
