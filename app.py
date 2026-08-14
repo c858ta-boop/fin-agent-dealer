@@ -21,14 +21,71 @@ with col1:
 with col2:
     new_file = st.file_uploader("📂 Загрузите НОВЫЙ отчет (текущий месяц)", type=["xlsx"])
 
+def convert_df_to_html_report(total_old, total_new, delta, df_top10):
+    """Создает простой HTML-отчет для печати в PDF"""
+    html = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 30px; color: #333; }}
+            h2 {{ color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; }}
+            .metric-box {{ background: #F3F4F6; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
+            th {{ background: #1E3A8A; color: white; padding: 10px; text-align: left; font-size: 13px; }}
+            td {{ padding: 10px; border-bottom: 1px solid #E5E7EB; font-size: 12px; }}
+            tr:nth-child(even) {{ background: #F9FAFB; }}
+            .right {{ text-align: right; }}
+        </style>
+    </head>
+    <body>
+        <h2>Финансовый отчет Дилерского Центра</h2>
+        <p><b>Факторный анализ изменений в статьях расходов</b></p>
+        
+        <div class="metric-box">
+            <p>• Расходы за прошлый месяц: <b>{total_old:,.2f} руб.</b></p>
+            <p>• Расходы за текущий месяц: <b>{total_new:,.2f} руб.</b></p>
+            <p>• Изменение расходов всего ДЦ: <b>{delta:+,.2f} руб.</b></p>
+        </div>
+        
+        <h2>ТОП-10 главных изменений в статьях расходов</h2>
+        
+        <table>
+            <tr>
+                <th>№</th>
+                <th>Лист</th>
+                <th>Статья расходов</th>
+                <th class="right">Было (руб.)</th>
+                <th class="right">Стало (руб.)</th>
+                <th class="right">Изменение (руб.)</th>
+                <th class="right">Доля во влиянии на общую разницу</th>
+            </tr>
+    """
+    for idx, row in df_top10.iterrows():
+        html += f"""
+            <tr>
+                <td>{idx}</td>
+                <td>{row['Лист']}</td>
+                <td>{row['Статья расходов']}</td>
+                <td class="right">{row['Было (руб.)']:,.2f}</td>
+                <td class="right">{row['Стало (руб.)']:,.2f}</td>
+                <td class="right">{row['Изменение (руб.)']:+,.2f}</td>
+                <td class="right">{row['Доля во влиянии на общую разницу']}</td>
+            </tr>
+        """
+    html += """
+        </table>
+    </body>
+    </html>
+    """
+    return html
+
 if old_file and new_file:
     st.info("Файлы получены. Запускаю базовый расчёт таблиц...")
     
     try:
-        # Индекс для pandas (в Excel нумерация с 1, в Python с 0)
         pandas_header_index = int(header_row) - 1
         
-        # Читаем все листы стандартным методом pandas
         old_excel = pd.ExcelFile(old_file)
         new_excel = pd.ExcelFile(new_file)
         common_sheets = list(set(old_excel.sheet_names).intersection(set(new_excel.sheet_names)))
@@ -42,7 +99,6 @@ if old_file and new_file:
             df_old = pd.read_excel(old_file, sheet_name=sheet, header=pandas_header_index)
             df_new = pd.read_excel(new_file, sheet_name=sheet, header=pandas_header_index)
             
-            # Очищаем заголовки
             df_old.columns = [str(c).strip() for c in df_old.columns]
             df_new.columns = [str(c).strip() for c in df_new.columns]
             
@@ -54,7 +110,6 @@ if old_file and new_file:
                 dict_old = pd.Series(df_old_clean[value_column].values, index=df_old_clean[target_column]).to_dict()
                 dict_new = pd.Series(df_new_clean[value_column].values, index=df_new_clean[target_column]).to_dict()
                 
-                # Фиксируем общий итог по ДЦ
                 for k, v in dict_old.items():
                     if str(k).strip().lower() == total_row_name.lower().strip():
                         try: total_old_dc += float(v)
@@ -66,7 +121,6 @@ if old_file and new_file:
                         try: total_new_dc += float(v)
                         except: pass
                 
-                # Собираем обычные строки
                 sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
                 for article in sheet_articles:
                     article_str = str(article).strip()
@@ -91,7 +145,6 @@ if old_file and new_file:
                             "сортировка_влияния": abs_delta
                         })
         
-        # Считаем финальную дельту
         dc_delta = total_new_dc - total_old_dc
         
         st.subheader("📊 Общий финансовый результат по ДЦ")
@@ -107,7 +160,6 @@ if old_file and new_file:
             df_total_changes = pd.DataFrame(all_expenses_changes)
             top_10_changes = df_total_changes.sort_values(by="сортировка_влияния", ascending=False).head(10)
             
-            # Считаем долю в процентах и добавляем текстовый знак %
             if total_old_dc > 0:
                 top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(
                     lambda row: f"{row['Изменение (руб.)'] / total_old_dc * 100:+.2f}%", axis=1
@@ -120,8 +172,25 @@ if old_file and new_file:
             
             st.subheader("📋 Директорский отчет: ТОП-10 изменений")
             st.dataframe(top_10_display, use_container_width=True)
+            
+            # КНОПКА СКАЧИВАНИЯ ОТЧЕТА ДЛЯ ПЕЧАТИ В PDF
+            st.write("---")
+            st.subheader("📥 Экспорт отчета")
+            
+            html_report = convert_df_to_html_report(total_old_dc, total_new_dc, dc_delta, top_10_display)
+            
+            st.download_button(
+                label="📄 Скачать отчет для сохранения в PDF",
+                data=html_report,
+                file_name="Director_Financial_Report.html",
+                mime="text/html"
+            )
+            st.caption("💡 Как сделать PDF: Откройте скачанный файл и нажмите Ctrl+P (или Cmd+P на Mac) -> выберите 'Сохранить как PDF'.")
+            
         else:
             st.info("📊 Изменений по статьям расходов между отчетами не обнаружено.")
             
     except Exception as e:
         st.error(f"⚠️ Произошла непредвиденная ошибка: {e}")
+else:
+    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
