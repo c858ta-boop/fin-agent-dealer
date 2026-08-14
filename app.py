@@ -1,6 +1,16 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
+from io import BytesIO
+
+# Импорты для генерации PDF
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttcounts import TTFFileHeader
+from reportlab.pdfbase.ttfonts import TTFont
 
 st.set_page_config(page_title="Финансовый ИИ-Агент", layout="wide")
 
@@ -16,28 +26,97 @@ with st.sidebar:
     total_row_name = st.text_input("Название строки общего итога:", value="Всего по ДЦ")
     st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветовую заливку.")
 
-# Блок загрузки файлов
-col1, col2 = st.columns(2)
-with col1:
-    old_file = st.file_uploader("📂 Загрузите СТАРЫЙ отчет (прошлый месяц)", type=["xlsx"])
-with col2:
-    new_file = st.file_uploader("📂 Загрузите НОВЫЙ отчет (текущий месяц)", type=["xlsx"])
-
 def is_colored(cell):
     """Проверяет, есть ли у ячейки цветная заливка (игнорирует белый/прозрачный)"""
     if cell.fill and cell.fill.fill_type:
-        # Если тип заливки solid и цвет не белый/прозрачный
         color = cell.fill.start_color.index
-        # Обычные коды для "без заливки" или "белый" в openpyxl: '00000000', 0, 'FFFFFFFF'
         if color and str(color) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
             return True
     return False
+
+def generate_pdf(total_old, total_new, delta, df_top10):
+    """Генерирует PDF-отчет в оперативной памяти (BytesIO)"""
+    # Регистрируем стандартный шрифт Helvetica, который поддерживает кириллицу в ReportLab на серверах Streamlit
+    # Если на сервере возникнут проблемы со шрифтами, используем встроенные стили
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    
+    # Создаем кастомные стили для бизнес-отчета
+    title_style = ParagraphStyle(
+        'PDFTitle',
+        parent=styles['Heading1'],
+        fontSize=20,
+        spaceAfter=15,
+        textColor=colors.HexColor('#1E3A8A')
+    )
+    
+    text_style = ParagraphStyle(
+        'PDFText',
+        parent=styles['Normal'],
+        fontSize=11,
+        spaceAfter=10
+    )
+    
+    # Заголовок документа
+    story.append(Paragraph("<b>Финансовый отчет Дилерского Центра</b>", title_style))
+    story.append(Paragraph(f"Факторный анализ изменений в статьях расходов", text_style))
+    story.append(Spacer(1, 15))
+    
+    # Сводные показатели по ДЦ
+    story.append(Paragraph(f"<b>Общие финансовые результаты по ДЦ:</b>", styles['Heading2']))
+    story.append(Paragraph(f"• Расходы за прошлый месяц: {total_old:,.2f} руб.", text_style))
+    story.append(Paragraph(f"• Расходы за текущий месяц: {total_new:,.2f} руб.", text_style))
+    story.append(Paragraph(f"• <b>Общее изменение расходов ДЦ: {delta:+,.2f} руб.</b>", text_style))
+    story.append(Spacer(1, 15))
+    
+    # Таблица ТОП-10 изменений
+    story.append(Paragraph("<b>ТОП-10 главных изменений в статьях расходов:</b>", styles['Heading2']))
+    story.append(Paragraph("В таблицу включены только чистые статьи расходов (цветные промежуточные итоги исключены).", text_style))
+    story.append(Spacer(1, 5))
+    
+    # Подготовка данных для таблицы в PDF
+    table_data = [['№', 'Лист', 'Статья расходов', 'Было (руб.)', 'Стало (руб.)', 'Изменение', 'Доля в ДЦ']]
+    
+    for idx, row in df_top10.iterrows():
+        table_data.append([
+            str(idx),
+            str(row['Лист']),
+            str(row['Статья расходов']),
+            f"{row['Было (руб.)']:,.2f}",
+            f"{row['Стало (руб.)']:,.2f}",
+            f"{row['Изменение (руб.)']:+,.2f}",
+            f"{row['Доля во влиянии на общую разницу']:.2f}%"
+        ])
+        
+    pdf_table = Table(table_data, colWidths=[20, 60, 160, 80, 80, 80, 50])
+    
+    # Стилизация таблицы (красивый строгий дизайн)
+    pdf_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('ALIGN', (3,1), (-1,-1), 'RIGHT'), # Выравниваем цифры по правому краю
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F3F4F6')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
+        ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+    ]))
+    
+    story.append(pdf_table)
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 
 if old_file and new_file:
     st.success("Файлы успешно загружены! Начинаю факторный анализ с фильтрацией по цвету...")
     
     try:
-        # Сначала считываем файлы через openpyxl для анализа цветов ячеек
         wb_old = openpyxl.load_workbook(old_file, data_only=True)
         wb_new = openpyxl.load_workbook(new_file, data_only=True)
         
@@ -57,7 +136,6 @@ if old_file and new_file:
                 ws_old = wb_old[sheet_name]
                 ws_new = wb_new[sheet_name]
                 
-                # Ищем индексы нужных столбцов по строке заголовков
                 target_col_idx_old, value_col_idx_old = None, None
                 target_col_idx_new, value_col_idx_new = None, None
                 
@@ -71,10 +149,8 @@ if old_file and new_file:
                     if val == target_column: target_col_idx_new = col
                     if val == value_column: value_col_idx_new = col
                 
-                # Если на этом листе структура совпала, разбираем его строчка за строчкой
                 if target_col_idx_old and value_col_idx_old and target_col_idx_new and value_col_idx_new:
                     
-                    # Собираем данные старого месяца
                     dict_old = {}
                     for r in range(header_idx + 1, ws_old.max_row + 1):
                         cell_art = ws_old.cell(row=r, column=target_col_idx_old)
@@ -83,20 +159,17 @@ if old_file and new_file:
                         if cell_art.value is not None:
                             art_str = str(cell_art.value).strip()
                             
-                            # Фиксируем тотал ДЦ, даже если он покрашен цветным
                             if art_str.lower() == total_row_name.lower().strip():
                                 try: total_old_dc += float(cell_val.value or 0)
                                 except: pass
                                 total_row_found = True
                                 continue
                                 
-                            # Если строка цветная — пропускаем её!
                             if is_colored(cell_art):
                                 continue
                                 
                             dict_old[art_str] = cell_val.value
 
-                    # Собираем данные нового месяца
                     dict_new = {}
                     for r in range(header_idx + 1, ws_new.max_row + 1):
                         cell_art = ws_new.cell(row=r, column=target_col_idx_new)
@@ -115,7 +188,6 @@ if old_file and new_file:
                                 
                             dict_new[art_str] = cell_val.value
                     
-                    # Считаем разницу по чистым (белым) статьям
                     sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
                     
                     for article in sheet_articles:
@@ -141,50 +213,6 @@ if old_file and new_file:
                                 "Абсолютное влияние (руб.)": abs_delta
                             })
             
-            # Расчет финальных результатов
             dc_delta = total_new_dc - total_old_dc
             
             st.subheader("📊 Общий финансовый результат по ДЦ")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
-            with c2:
-                st.metric("Расходы за текущий месяц", f"{total_new_dc:,.2f} руб.")
-            with c3:
-                st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
-                
-            if not total_row_found:
-                st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах.")
-            
-            # Построение ТОП-10
-            if all_expenses_changes:
-                df_total_changes = pd.DataFrame(all_expenses_changes)
-                top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
-                
-                if total_old_dc > 0:
-                    top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes["Изменение (руб.)"] / total_old_dc * 100
-                else:
-                    top_10_changes["Доля во влиянии на общую разницу"] = 0.0
-                
-                top_10_display = top_10_changes.drop(columns=["Абсолютное влияние (руб.)"], errors='ignore').reset_index(drop=True)
-                top_10_display.index = top_10_display.index + 1
-                
-                st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
-                st.write("Суммирующие строки отделов отфильтрованы по цвету заливки. Показываются только прямые статьи расходов:")
-                
-                st.dataframe(
-                    top_10_display.style.format({
-                        "Было (руб.)": "{:,.2f}", 
-                        "Стало (руб.)": "{:,.2f}", 
-                        "Изменение (руб.)": "{:+,.2f}",
-                        "Доля во влиянии на общую разницу": "{:+,.2f}%"
-                    }),
-                    use_container_width=True
-                )
-            else:
-                st.info("📊 Изменений по расходам между отчетами не найдено.")
-                
-    except Exception as e:
-        st.error(f"⚠️ Произошла ошибка при анализе структуры Excel: {e}")
-else:
-    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
