@@ -21,7 +21,7 @@ with st.sidebar:
     value_column = st.text_input("Название столбца со значениями (суммами):", value="Всего расходы")
     header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=2)
     total_row_name = st.text_input("Название строки общего итога:", value="Всего по ДЦ")
-    st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветоввою заливку.")
+    st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветовую заливку.")
 
 def is_colored(cell):
     """Проверяет, есть ли у ячейки цветная заливка (игнорирует белый/прозрачный)"""
@@ -55,10 +55,10 @@ def generate_pdf(total_old, total_new, delta, df_top10):
     )
     
     story.append(Paragraph("<b>Финансовый отчет Дилерского Центра</b>", title_style))
-    story.append(Paragraph(f"Факторный анализ изменений в статьях расходов", text_style))
+    story.append(Paragraph("Факторный анализ изменений в статьях расходов", text_style))
     story.append(Spacer(1, 15))
     
-    story.append(Paragraph(f"<b>Общие финансовые результаты по ДЦ:</b>", styles['Heading2']))
+    story.append(Paragraph("<b>Общие финансовые результаты по ДЦ:</b>", styles['Heading2']))
     story.append(Paragraph(f"• Расходы за прошлый месяц: {total_old:,.2f} руб.", text_style))
     story.append(Paragraph(f"• Расходы за текущий месяц: {total_new:,.2f} руб.", text_style))
     story.append(Paragraph(f"• <b>Общее изменение расходов ДЦ: {delta:+,.2f} руб.</b>", text_style))
@@ -81,18 +81,16 @@ def generate_pdf(total_old, total_new, delta, df_top10):
             f"{row['Доля во влиянии на общую разницу']:.2f}%"
         ])
         
-    pdf_table = Table(table_data, colWidths=[20, 60, 160, 80, 80, 80, 50])
+    pdf_table = Table(table_data)
     
     pdf_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
         ('ALIGN', (3,1), (-1,-1), 'RIGHT'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('BOTTOMPADDING', (0,0), (-1,0), 8),
         ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F3F4F6')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
-        ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
         ('FONTSIZE', (0,0), (-1,-1), 9),
     ]))
     
@@ -117,7 +115,6 @@ if old_file and new_file:
             total_old_dc = 0.0
             total_new_dc = 0.0
             total_row_found = False
-            
             header_idx = int(header_row)
             
             for sheet_name in common_sheets:
@@ -138,7 +135,6 @@ if old_file and new_file:
                     if val == value_column: value_col_idx_new = col
                 
                 if target_col_idx_old and value_col_idx_old and target_col_idx_new and value_col_idx_new:
-                    
                     dict_old = {}
                     for r in range(header_idx + 1, ws_old.max_row + 1):
                         cell_art = ws_old.cell(row=r, column=target_col_idx_old)
@@ -146,16 +142,13 @@ if old_file and new_file:
                         
                         if cell_art.value is not None:
                             art_str = str(cell_art.value).strip()
-                            
                             if art_str.lower() == total_row_name.lower().strip():
                                 try: total_old_dc += float(cell_val.value or 0)
                                 except: pass
                                 total_row_found = True
                                 continue
-                                
                             if is_colored(cell_art):
                                 continue
-                                
                             dict_old[art_str] = cell_val.value
 
                     dict_new = {}
@@ -165,26 +158,20 @@ if old_file and new_file:
                         
                         if cell_art.value is not None:
                             art_str = str(cell_art.value).strip()
-                            
                             if art_str.lower() == total_row_name.lower().strip():
                                 try: total_new_dc += float(cell_val.value or 0)
                                 except: pass
                                 continue
-                                
                             if is_colored(cell_art):
                                 continue
-                                
                             dict_new[art_str] = cell_val.value
                     
                     sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
-                    
                     for article in sheet_articles:
                         if article == "" or any(word in article.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
                             continue
-                            
                         try: val_old = float(dict_old.get(article, 0) or 0)
                         except: val_old = 0.0
-                            
                         try: val_new = float(dict_new.get(article, 0) or 0)
                         except: val_new = 0.0
                         
@@ -203,7 +190,7 @@ if old_file and new_file:
             
             dc_delta = total_new_dc - total_old_dc
             
-            st.subheader("📊 Общий financial результат по ДЦ")
+            st.subheader("📊 Общий финансовый результат по ДЦ")
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
@@ -217,3 +204,10 @@ if old_file and new_file:
             
             if all_expenses_changes:
                 df_total_changes = pd.DataFrame(all_expenses_changes)
+                top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
+                
+                if total_old_dc > 0:
+                    top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes["Изменение (руб.)"] / total_old_dc * 100
+                else:
+                    top_10_changes["Доля во влиянии на общую разницу"] = 0.0
+                
