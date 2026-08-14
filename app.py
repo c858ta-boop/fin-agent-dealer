@@ -4,7 +4,7 @@ import pandas as pd
 st.set_page_config(page_title="Финансовый ИИ-Агент", layout="wide")
 
 st.title("🚗 Финансовый Автономный Агент Дилерского Центра")
-st.write("Анализ вклада отдельных статей расходов в изменение общего результата по ДЦ.")
+st.write("Анализ влияния отдельных статей расходов на изменение общего бюджета предприятия.")
 
 # Панель настроек в боковой панели
 with st.sidebar:
@@ -41,6 +41,7 @@ if old_file and new_file:
             
             pandas_header_index = int(header_row) - 1
             
+            # Первый проход: собираем только общие итоги по ДЦ для базы расчета
             for sheet in common_sheets:
                 df_old = pd.read_excel(old_file, sheet_name=sheet, header=pandas_header_index)
                 df_new = pd.read_excel(new_file, sheet_name=sheet, header=pandas_header_index)
@@ -49,14 +50,12 @@ if old_file and new_file:
                 df_new.columns = [str(c).strip() for c in df_new.columns]
                 
                 if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
-                    
                     df_old_clean = df_old.dropna(subset=[target_column, value_column])
                     df_new_clean = df_new.dropna(subset=[target_column, value_column])
                     
                     dict_old = pd.Series(df_old_clean[value_column].values, index=df_old_clean[target_column]).to_dict()
                     dict_new = pd.Series(df_new_clean[value_column].values, index=df_new_clean[target_column]).to_dict()
                     
-                    # 1. Ищем и фиксируем строку "Всего по ДЦ" для определения общего изменения
                     for k, v in dict_old.items():
                         if str(k).strip().lower() == total_row_name.lower().strip():
                             try: total_old_dc += float(v)
@@ -67,14 +66,27 @@ if old_file and new_file:
                         if str(k).strip().lower() == total_row_name.lower().strip():
                             try: total_new_dc += float(v)
                             except: pass
+
+            # Второй проход: собираем и анализируем статьи
+            for sheet in common_sheets:
+                df_old = pd.read_excel(old_file, sheet_name=sheet, header=pandas_header_index)
+                df_new = pd.read_excel(new_file, sheet_name=sheet, header=pandas_header_index)
+                
+                df_old.columns = [str(c).strip() for c in df_old.columns]
+                df_new.columns = [str(c).strip() for c in df_new.columns]
+                
+                if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
+                    df_old_clean = df_old.dropna(subset=[target_column, value_column])
+                    df_new_clean = df_new.dropna(subset=[target_column, value_column])
                     
-                    # 2. Собираем обычные статьи расходов
+                    dict_old = pd.Series(df_old_clean[value_column].values, index=df_old_clean[target_column]).to_dict()
+                    dict_new = pd.Series(df_new_clean[value_column].values, index=df_new_clean[target_column]).to_dict()
+                    
                     sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
                     
                     for article in sheet_articles:
                         article_str = str(article).strip()
                         
-                        # Пропускаем строку тотала и технический мусор, чтобы они не двоились в анализе
                         if article_str == "" or any(word in article_str.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
                             continue
                             
@@ -112,32 +124,32 @@ if old_file and new_file:
             if not total_row_found:
                 st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах. Общий итог рассчитан как сумма листов.")
             
-            # Формируем финальный ТОП-10 статей по их вкладу
+            # Формируем финальный ТОП-10 статей
             if all_expenses_changes:
                 df_total_changes = pd.DataFrame(all_expenses_changes)
                 
-                # Сортируем по силе абсолютного численного влияния
+                # Ранжируем по силе абсолютного изменения (чтобы в топ попали самые большие сдвиги)
                 top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
                 
-                # Считаем процент вклада каждой статьи в общее изменение ДЦ
-                if abs(dc_delta) > 0:
-                    top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(
-                        lambda row: f"{(row['Абсолютное влияние (руб.)'] / abs(dc_delta)) * 100:.1f}%", axis=1
-                    )
+                # Считаем Долю влияния: Изменение / Расходы прошлого месяца
+                if total_old_dc > 0:
+                    top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes["Изменение (руб.)"] / total_old_dc * 100
                 else:
-                    top_10_changes["Доля во влиянии на общую разницу"] = "0.0%"
+                    top_10_changes["Доля во влиянии на общую разницу"] = 0.0
                 
+                # Убираем техническую колонку перед показом
                 top_10_display = top_10_changes.drop(columns=["Абсолютное влияние (руб.)"], errors='ignore').reset_index(drop=True)
                 top_10_display.index = top_10_display.index + 1
                 
-                st.subheader(f"📋 Директорский отчет: ТОП-10 виновников изменения на {dc_delta:,.2f} руб.")
-                st.write("Эти 10 статей оказали самое мощное численное воздействие на финальный результат расходов компании:")
+                st.subheader(f"📋 Директорский отчет: ТОП-10 главных изменений")
+                st.write("Эти 10 статей оказали самое сильное влияние на бюджет относительно прошлого месяца:")
                 
                 st.dataframe(
                     top_10_display.style.format({
                         "Было (руб.)": "{:,.2f}", 
                         "Стало (руб.)": "{:,.2f}", 
-                        "Изменение (руб.)": "{:+,.2f}"
+                        "Изменение (руб.)": "{:+,.2f}",
+                        "Доля во влиянии на общую разницу": "{:+,.2f}%"  # Покажет + или - перед процентом
                     }),
                     use_container_width=True
                 )
