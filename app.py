@@ -181,7 +181,7 @@ if old_file and new_file:
                             "Было (руб.)": val_old,
                             "Стало (руб.)": val_new,
                             "Изменение (руб.)": item_delta,
-                            "abs_vliyanie": abs_delta
+                            "absolute_impact": abs_delta
                         })
         
         dc_delta = total_new_dc - total_old_dc
@@ -200,9 +200,11 @@ if old_file and new_file:
         
         if all_expenses_changes:
             df_total_changes = pd.DataFrame(all_expenses_changes)
-            top_10_changes = df_total_changes.sort_values(by="abs_vliyanie", ascending=False).head(10)
             
-            # Рассчитываем процент текстом со знаком % и называем колонку одинаково везде
+            # Сортировка по зафиксированному английскому имени
+            top_10_changes = df_total_changes.sort_values(by="absolute_impact", ascending=False).head(10)
+            
+            # Рассчитываем процент текстом со знаком %
             if total_old_dc > 0:
                 top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(
                     lambda row: f"{row['Изменение (руб.)'] / total_old_dc * 100:+.2f}%", axis=1
@@ -210,7 +212,7 @@ if old_file and new_file:
             else:
                 top_10_changes["Доля во влиянии на общую разницу"] = "0.00%"
             
-            top_10_display = top_10_changes.drop(columns=["abs_vliyanie"], errors='ignore').reset_index(drop=True)
+            top_10_display = top_10_changes.drop(columns=["absolute_impact"], errors='ignore').reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
             
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
