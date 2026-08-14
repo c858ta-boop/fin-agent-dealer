@@ -210,7 +210,6 @@ def parse_and_analyze():
         st.write("---")
         st.subheader("📥 Экспорт отчета")
         
-        # Создаем HTML-версию отчета
         html_report = convert_df_to_html_report(total_old_dc, total_new_dc, dc_delta, top_10_display)
         
         st.download_button(
@@ -219,5 +218,7 @@ def parse_and_analyze():
             file_name="Director_Financial_Report.html",
             mime="text/html"
         )
-        st.caption("💡 Подсказка: Откройте скачанный файл в браузере и нажмите Ctrl+P (или 'Печать'), чтобы мгновенно сохранить его как идеальный PDF без искажения шрифтов.")
+        st.caption("💡 Подсказка: Откройте скачанный файл в браузере и нажмите Ctrl+P (или 'Печать'), чтобы мгновенно сохранить его как идеальный PDF.")
     else:
+        st.info("📊 Изменений по расходам между отчетами не найдено.")
+
