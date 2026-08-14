@@ -23,6 +23,42 @@ with col1:
 with col2:
     new_file = st.file_uploader("📂 Загрузите НОВЫЙ отчет (текущий месяц)", type=["xlsx"])
 
+def is_colored(cell):
+    """Проверяет, есть ли у ячейки цветная заливка"""
+    if cell and cell.fill and cell.fill.fill_type:
+        color = cell.fill.start_color.index
+        if color and str(color) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
+            return True
+    return False
+
+def get_colored_rows(file_bytes, sheet_name, header_idx, target_col_name):
+    """Быстро находит строки с цветовой заливкой с защитой от пустых ячеек"""
+    colored_rows = set()
+    try:
+        # Убираем read_only для более стабильной обработки сложных ячеек Excel
+        wb = openpyxl.load_workbook(file_bytes, data_only=True)
+        if sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            target_col_idx = None
+            
+            # Читаем строку заголовков
+            for col in range(1, ws.max_column + 1):
+                cell_val = ws.cell(row=header_idx, column=col).value
+                if cell_val is not None and str(cell_val).strip() == target_col_name:
+                    target_col_idx = col
+                    break
+                    
+            # Если столбец найден, проверяем только его ячейки построчно
+            if target_col_idx:
+                for row_idx in range(header_idx + 1, ws.max_row + 1):
+                    cell = ws.cell(row=row_idx, column=target_col_idx)
+                    # Если ячейка не пустая и покрашена — запоминаем индекс строки
+                    if cell and cell.value is not None and is_colored(cell):
+                        colored_rows.add(row_idx - header_idx - 1)
+    except:
+        pass
+    return colored_rows
+
 # Запуск основного интерфейса только при наличии обоих файлов
 if old_file and new_file:
     st.success("Файлы успешно загружены! Начинаю факторный анализ...")
@@ -50,43 +86,9 @@ if old_file and new_file:
         
         # Сканируем каждый общий лист
         for sheet_name in common_sheets:
-            ws_old = wb_old[sheet_name]
-            ws_new = wb_new[sheet_name]
-            
-            # Ищем индексы нужных столбцов по строке заголовков
-            target_col_idx_old, value_col_idx_old = None, None
-            target_col_idx_new, value_col_idx_new = None, None
-            
-            header_row_cells_old = list(ws_old.iter_rows(min_row=header_idx, max_row=header_idx, values_only=False))
-            for idx, cell in enumerate(header_row_cells_old, start=1):
-                if str(cell.value).strip() == target_column:
-                    target_col_idx_old = idx
-                    break
-            
-            header_row_cells_new = list(ws_new.iter_rows(min_row=header_idx, max_row=header_idx, values_only=False))
-            for idx, cell in enumerate(header_row_cells_new, start=1):
-                if str(cell.value).strip() == target_column:
-                    target_col_idx_new = idx
-                    break
-            
-            # Если структура совпала, быстро находим цветные строки на этом листе
-            colored_old_rows = set()
-            if target_col_idx_old:
-                for r_idx in range(header_idx + 1, ws_old.max_row + 1):
-                    cell = ws_old.cell(row=r_idx, column=target_col_idx_old)
-                    if cell.fill and cell.fill.fill_type:
-                        col_idx = cell.fill.start_color.index
-                        if col_idx and str(col_idx) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
-                            colored_old_rows.add(r_idx - header_idx - 1)
-                            
-            colored_new_rows = set()
-            if target_col_idx_new:
-                for r_idx in range(header_idx + 1, ws_new.max_row + 1):
-                    cell = ws_new.cell(row=r_idx, column=target_col_idx_new)
-                    if cell.fill and cell.fill.fill_type:
-                        col_idx = cell.fill.start_color.index
-                        if col_idx and str(col_idx) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
-                            colored_new_rows.add(r_idx - header_idx - 1)
+            # Сначала через защищенную функцию вычисляем цветные строки
+            colored_old_rows = get_colored_rows(BytesIO(old_bytes), sheet_name, header_idx, target_column)
+            colored_new_rows = get_colored_rows(BytesIO(new_bytes), sheet_name, header_idx, target_column)
             
             # Читаем данные через pandas для математических расчетов
             df_old = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_name, header=pandas_header_index)
@@ -100,12 +102,12 @@ if old_file and new_file:
                 
                 # Фиксируем общий итог "Всего по ДЦ" до очистки цвета
                 for i, row in df_old.iterrows():
-                    if str(row[target_column]).strip().lower() == total_row_name.lower().strip():
+                    if row[target_column] is not None and str(row[target_column]).strip().lower() == total_row_name.lower().strip():
                         try: total_old_dc += float(row[value_column])
                         except: pass
                         total_row_found = True
                 for i, row in df_new.iterrows():
-                    if str(row[target_column]).strip().lower() == total_row_name.lower().strip():
+                    if row[target_column] is not None and str(row[target_column]).strip().lower() == total_row_name.lower().strip():
                         try: total_new_dc += float(row[value_column])
                         except: pass
                 
@@ -155,7 +157,7 @@ if old_file and new_file:
             df_total_changes = pd.DataFrame(all_expenses_changes)
             top_10_changes = df_total_changes.sort_values(by="sort_key", ascending=False).head(10)
             
-            # Рассчитываем процент строго в одну строку без if-else
+            # Рассчитываем процент строго в одну строку
             base_denom = total_old_dc if total_old_dc > 0 else 1.0
             top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(lambda r: f"{r['Изменение (руб.)'] / base_denom * 100:+.2f}%", axis=1)
             
@@ -170,7 +172,6 @@ if old_file and new_file:
             st.write("---")
             st.subheader("📥 Экспорт отчета")
             
-            # Создаем HTML без двойных фигурных скобок в f-строке, чтобы избежать синтаксического сбоя
             html_report = "<html><head><meta charset='utf-8'><style>"
             html_report += "body { font-family: Arial, sans-serif; margin: 30px; color: #333; }"
             html_report += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; }"
@@ -178,3 +179,5 @@ if old_file and new_file:
             html_report += "table { width: 100%; border-collapse: collapse; margin-top: 15px; }"
             html_report += "th { background: #1E3A8A; color: white; padding: 10px; text-align: left; font-size: 13px; }"
             html_report += "td { padding: 10px; border-bottom: 1px solid #E5E7EB; font-size: 12px; }"
+            html_report += "tr:nth-child(even) { background: #F9FAFB; }"
+            html_report += ".right { text-align: right; }"
