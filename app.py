@@ -98,7 +98,7 @@ def convert_df_to_html_report(total_old, total_new, delta, df_top10):
     return html
 
 def run_analysis(old_bytes, new_bytes):
-    """Основная логика расчетов с выровненной структурой отступов"""
+    """Основная логика расчетов с линейной структурой"""
     pandas_header_index = int(header_row) - 1
     old_excel = pd.ExcelFile(BytesIO(old_bytes))
     new_excel = pd.ExcelFile(BytesIO(new_bytes))
@@ -177,12 +177,9 @@ def run_analysis(old_bytes, new_bytes):
         df_total_changes = pd.DataFrame(all_expenses_changes)
         top_10_changes = df_total_changes.sort_values(by="сортировка_влияния", ascending=False).head(10)
         
-        if total_old_dc > 0:
-            top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(
-                lambda row: f"{row['Изменение (руб.)'] / total_old_dc * 100:+.2f}%", axis=1
-            )
-        else:
-            top_10_changes["Доля во влиянии на общую разницу"] = "0.00%"
+        # БЕЗОПАСНЫЙ ОДНОСТРОЧНИК: Считаем процент без ветвления if-else во избежание IndentationError
+        base_denom = total_old_dc if total_old_dc > 0 else 1.0
+        top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(lambda r: f"{r['Изменение (руб.)'] / base_denom * 100:+.2f}%" if total_old_dc > 0 else "0.00%", axis=1)
         
         top_10_display = top_10_changes.drop(columns=["сортировка_влияния"]).reset_index(drop=True)
         top_10_display.index = top_10_display.index + 1
