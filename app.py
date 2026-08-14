@@ -8,9 +8,6 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttcounts import TTFFileHeader
-from reportlab.pdfbase.ttfonts import TTFont
 
 st.set_page_config(page_title="Финансовый ИИ-Агент", layout="wide")
 
@@ -24,7 +21,7 @@ with st.sidebar:
     value_column = st.text_input("Название столбца со значениями (суммами):", value="Всего расходы")
     header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=2)
     total_row_name = st.text_input("Название строки общего итога:", value="Всего по ДЦ")
-    st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветовую заливку.")
+    st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветоввою заливку.")
 
 def is_colored(cell):
     """Проверяет, есть ли у ячейки цветная заливка (игнорирует белый/прозрачный)"""
@@ -36,15 +33,12 @@ def is_colored(cell):
 
 def generate_pdf(total_old, total_new, delta, df_top10):
     """Генерирует PDF-отчет в оперативной памяти (BytesIO)"""
-    # Регистрируем стандартный шрифт Helvetica, который поддерживает кириллицу в ReportLab на серверах Streamlit
-    # Если на сервере возникнут проблемы со шрифтами, используем встроенные стили
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
     story = []
     
     styles = getSampleStyleSheet()
     
-    # Создаем кастомные стили для бизнес-отчета
     title_style = ParagraphStyle(
         'PDFTitle',
         parent=styles['Heading1'],
@@ -60,24 +54,20 @@ def generate_pdf(total_old, total_new, delta, df_top10):
         spaceAfter=10
     )
     
-    # Заголовок документа
     story.append(Paragraph("<b>Финансовый отчет Дилерского Центра</b>", title_style))
     story.append(Paragraph(f"Факторный анализ изменений в статьях расходов", text_style))
     story.append(Spacer(1, 15))
     
-    # Сводные показатели по ДЦ
     story.append(Paragraph(f"<b>Общие финансовые результаты по ДЦ:</b>", styles['Heading2']))
     story.append(Paragraph(f"• Расходы за прошлый месяц: {total_old:,.2f} руб.", text_style))
     story.append(Paragraph(f"• Расходы за текущий месяц: {total_new:,.2f} руб.", text_style))
     story.append(Paragraph(f"• <b>Общее изменение расходов ДЦ: {delta:+,.2f} руб.</b>", text_style))
     story.append(Spacer(1, 15))
     
-    # Таблица ТОП-10 изменений
     story.append(Paragraph("<b>ТОП-10 главных изменений в статьях расходов:</b>", styles['Heading2']))
     story.append(Paragraph("В таблицу включены только чистые статьи расходов (цветные промежуточные итоги исключены).", text_style))
     story.append(Spacer(1, 5))
     
-    # Подготовка данных для таблицы в PDF
     table_data = [['№', 'Лист', 'Статья расходов', 'Было (руб.)', 'Стало (руб.)', 'Изменение', 'Доля в ДЦ']]
     
     for idx, row in df_top10.iterrows():
@@ -93,12 +83,11 @@ def generate_pdf(total_old, total_new, delta, df_top10):
         
     pdf_table = Table(table_data, colWidths=[20, 60, 160, 80, 80, 80, 50])
     
-    # Стилизация таблицы (красивый строгий дизайн)
     pdf_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('ALIGN', (3,1), (-1,-1), 'RIGHT'), # Выравниваем цифры по правому краю
+        ('ALIGN', (3,1), (-1,-1), 'RIGHT'),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('BOTTOMPADDING', (0,0), (-1,0), 8),
         ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F3F4F6')),
@@ -108,7 +97,6 @@ def generate_pdf(total_old, total_new, delta, df_top10):
     ]))
     
     story.append(pdf_table)
-    
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -215,4 +203,17 @@ if old_file and new_file:
             
             dc_delta = total_new_dc - total_old_dc
             
-            st.subheader("📊 Общий финансовый результат по ДЦ")
+            st.subheader("📊 Общий financial результат по ДЦ")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
+            with c2:
+                st.metric("Расходы за текущий месяц", f"{total_new_dc:,.2f} руб.")
+            with c3:
+                st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
+                
+            if not total_row_found:
+                st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах.")
+            
+            if all_expenses_changes:
+                df_total_changes = pd.DataFrame(all_expenses_changes)
