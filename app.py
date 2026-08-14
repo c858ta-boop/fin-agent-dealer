@@ -1,13 +1,6 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
-from io import BytesIO
-
-# Импорты для генерации PDF
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
 
 st.set_page_config(page_title="Финансовый ИИ-Агент", layout="wide")
 
@@ -37,72 +30,6 @@ def is_colored(cell):
         if color and str(color) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
             return True
     return False
-
-def generate_pdf(total_old, total_new, delta, df_top10):
-    """Генерирует PDF-отчет в оперативной памяти"""
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
-    story = []
-    
-    styles = getSampleStyleSheet()
-    
-    title_style = ParagraphStyle(
-        'PDFTitle',
-        parent=styles['Heading1'],
-        fontSize=20,
-        spaceAfter=15,
-        textColor=colors.HexColor('#1E3A8A')
-    )
-    
-    text_style = ParagraphStyle(
-        'PDFText',
-        parent=styles['Normal'],
-        fontSize=11,
-        spaceAfter=10
-    )
-    
-    story.append(Paragraph("<b>Финансовый отчет Дилерского Центра</b>", title_style))
-    story.append(Paragraph("Факторный анализ изменений в статьях расходов", text_style))
-    story.append(Spacer(1, 15))
-    
-    story.append(Paragraph("<b>Общие финансовые результаты по ДЦ:</b>", styles['Heading2']))
-    story.append(Paragraph(f"Расходы за прошлый месяц: {total_old:,.2f} руб.", text_style))
-    story.append(Paragraph(f"Расходы за текущий месяц: {total_new:,.2f} руб.", text_style))
-    story.append(Paragraph(f"Общее изменение расходов ДЦ: {delta:+,.2f} руб.", text_style))
-    story.append(Spacer(1, 15))
-    
-    story.append(Paragraph("<b>ТОП-10 главных изменений в статьях расходов:</b>", styles['Heading2']))
-    story.append(Spacer(1, 5))
-    
-    table_data = [['№', 'Лист', 'Статья расходов', 'Было (руб.)', 'Стало (руб.)', 'Изменение', 'Доля в ДЦ']]
-    
-    for idx, row in df_top10.iterrows():
-        table_data.append([
-            str(idx),
-            str(row['Лист']),
-            str(row['Статья расходов']),
-            f"{row['Было (руб.)']:,.2f}",
-            f"{row['Стало (руб.)']:,.2f}",
-            f"{row['Изменение (руб.)']:+,.2f}",
-            f"{row['Доля во влиянии на общую разницу']:.2f}%"
-        ])
-        
-    pdf_table = Table(table_data)
-    
-    pdf_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('BOTTOMPADDING', (0,0), (-1,0), 8),
-        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F3F4F6')),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-    ]))
-    
-    story.append(pdf_table)
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
 
 def parse_and_analyze():
     """Основная функция логики приложения"""
@@ -218,15 +145,16 @@ def parse_and_analyze():
         
         st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
         st.write("Суммирующие строки отделов отфильтрованы по цвету заливки. Показываются только прямые статьи расходов:")
-        
-        # Упрощенный вывод без сложных стилей, чтобы избежать багов разметки
         st.dataframe(top_10_display, use_container_width=True)
-        
-        st.write("---")
-        st.subheader("📥 Экспорт результатов")
-        
-        pdf_data = generate_pdf(total_old_dc, total_new_dc, dc_delta, top_10_display)
-        st.download_button(
-            label="📄 Скачать директорский отчет в PDF",
-            data=pdf_data,
-            file_name="Director_Financial_Report.pdf",
+    else:
+        st.info("📊 Изменений по расходам между отчетами не найдено.")
+
+# Запуск по условию загрузки файлов
+if old_file and new_file:
+    st.success("Файлы успешно загружены! Начинаю факторный анализ...")
+    try:
+        parse_and_analyze()
+    except Exception as e:
+        st.error(f"⚠️ Произошла ошибка при анализе структуры Excel: {e}")
+else:
+    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
