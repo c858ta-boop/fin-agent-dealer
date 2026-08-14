@@ -39,7 +39,7 @@ def is_colored(cell):
     return False
 
 def generate_pdf(total_old, total_new, delta, df_top10):
-    """Генерирует PDF-отчет в оперативной памяти (BytesIO)"""
+    """Генерирует PDF-отчет в оперативной памяти"""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
     story = []
@@ -66,13 +66,12 @@ def generate_pdf(total_old, total_new, delta, df_top10):
     story.append(Spacer(1, 15))
     
     story.append(Paragraph("<b>Общие финансовые результаты по ДЦ:</b>", styles['Heading2']))
-    story.append(Paragraph(f"• Расходы за прошлый месяц: {total_old:,.2f} руб.", text_style))
-    story.append(Paragraph(f"• Расходы за текущий месяц: {total_new:,.2f} руб.", text_style))
-    story.append(Paragraph(f"• <b>Общее изменение расходов ДЦ: {delta:+,.2f} руб.</b>", text_style))
+    story.append(Paragraph(f"Расходы за прошлый месяц: {total_old:,.2f} руб.", text_style))
+    story.append(Paragraph(f"Расходы за текущий месяц: {total_new:,.2f} руб.", text_style))
+    story.append(Paragraph(f"Общее изменение расходов ДЦ: {delta:+,.2f} руб.", text_style))
     story.append(Spacer(1, 15))
     
     story.append(Paragraph("<b>ТОП-10 главных изменений в статьях расходов:</b>", styles['Heading2']))
-    story.append(Paragraph("В таблицу включены только чистые статьи расходов (цветные промежуточные итоги исключены).", text_style))
     story.append(Spacer(1, 5))
     
     table_data = [['№', 'Лист', 'Статья расходов', 'Было (руб.)', 'Стало (руб.)', 'Изменение', 'Доля в ДЦ']]
@@ -94,7 +93,6 @@ def generate_pdf(total_old, total_new, delta, df_top10):
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('ALIGN', (3,1), (-1,-1), 'RIGHT'),
         ('BOTTOMPADDING', (0,0), (-1,0), 8),
         ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F3F4F6')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
@@ -107,7 +105,7 @@ def generate_pdf(total_old, total_new, delta, df_top10):
     return buffer
 
 def parse_and_analyze():
-    """Основная функция логики приложения, полностью изолированная для защиты от SyntaxError"""
+    """Основная функция логики приложения"""
     wb_old = openpyxl.load_workbook(old_file, data_only=True)
     wb_new = openpyxl.load_workbook(new_file, data_only=True)
     
@@ -145,7 +143,6 @@ def parse_and_analyze():
             for r in range(header_idx + 1, ws_old.max_row + 1):
                 cell_art = ws_old.cell(row=r, column=target_col_idx_old)
                 cell_val = ws_old.cell(row=r, column=value_col_idx_old)
-                
                 if cell_art.value is not None:
                     art_str = str(cell_art.value).strip()
                     if art_str.lower() == total_row_name.lower().strip():
@@ -161,7 +158,6 @@ def parse_and_analyze():
             for r in range(header_idx + 1, ws_new.max_row + 1):
                 cell_art = ws_new.cell(row=r, column=target_col_idx_new)
                 cell_val = ws_new.cell(row=r, column=value_col_idx_new)
-                
                 if cell_art.value is not None:
                     art_str = str(cell_art.value).strip()
                     if art_str.lower() == total_row_name.lower().strip():
@@ -223,8 +219,14 @@ def parse_and_analyze():
         st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
         st.write("Суммирующие строки отделов отфильтрованы по цвету заливки. Показываются только прямые статьи расходов:")
         
-        st.dataframe(
-            top_10_display.style.format({
-                "Было (руб.)": "{:,.2f}", 
-                "Стало (руб.)": "{:,.2f}", 
-                "Изменение (руб.)": "{:+,.2f}",
+        # Упрощенный вывод без сложных стилей, чтобы избежать багов разметки
+        st.dataframe(top_10_display, use_container_width=True)
+        
+        st.write("---")
+        st.subheader("📥 Экспорт результатов")
+        
+        pdf_data = generate_pdf(total_old_dc, total_new_dc, dc_delta, top_10_display)
+        st.download_button(
+            label="📄 Скачать директорский отчет в PDF",
+            data=pdf_data,
+            file_name="Director_Financial_Report.pdf",
