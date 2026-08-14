@@ -9,9 +9,10 @@ st.write("Инструмент выявления ТОП-10 статей рас�
 # Блок инструкций для настройки соответствия в боковой панели
 with st.sidebar:
     st.header("⚙️ Настройки анализа")
-    target_column = st.text_input("Название столбца со статьями расходов:", value="Статья")
-    value_column = st.text_input("Название столбца со значениями (суммами):", value="Сумма")
-    st.caption("ℹ️ Убедитесь, что в ваших Excel файлах названия этих столбцов совпадают.")
+    target_column = st.text_input("Название столбца со статьями расходов:", value="Статья расходов")
+    value_column = st.text_input("Название столбца со значениями (суммами):", value="Всего расходы")
+    header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=2)
+    st.caption("ℹ️ Сейчас настройки адаптированы: заголовки ищутся на 2-й строчке, а данные читаются с 3-й.")
 
 # Блок загрузки файлов
 col1, col2 = st.columns(2)
@@ -33,76 +34,91 @@ if old_file and new_file:
         if not common_sheets:
             st.error("❌ Ошибка: В файлах нет листов с одинаковыми названиями!")
         else:
-            # Сюда мы соберем изменения вообще по всем листам, чтобы найти ТОП-10 по всему предприятию
             all_expenses_changes = []
             
+            # В pandas нумерация строк идет с 0, поэтому строка 2 в Excel — это индекс 1
+            pandas_header_index = int(header_row) - 1
+            
             for sheet in common_sheets:
-                df_old = pd.read_excel(old_file, sheet_name=sheet)
-                df_new = pd.read_excel(new_file, sheet_name=sheet)
+                # Читаем файл, указывая, на какой строчке находятся заголовки
+                df_old = pd.read_excel(old_file, sheet_name=sheet, header=pandas_header_index)
+                df_new = pd.read_excel(new_file, sheet_name=sheet, header=pandas_header_index)
                 
-                # Очищаем названия столбцов от пробелов
+                # Очищаем названия столбцов от пробелов по краям
                 df_old.columns = [str(c).strip() for c in df_old.columns]
                 df_new.columns = [str(c).strip() for c in df_new.columns]
                 
                 if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
                     
+                    # Фильтруем строки: убираем пустые значения в статьях и суммах
+                    df_old_clean = df_old.dropna(subset=[target_column, value_column])
+                    df_new_clean = df_new.dropna(subset=[target_column, value_column])
+                    
                     # Переводим данные в словари {Статья: Сумма}
-                    dict_old = pd.Series(df_old[value_column].values, index=df_old[target_column]).to_dict()
-                    dict_new = pd.Series(df_new[value_column].values, index=df_new[target_column]).to_dict()
+                    dict_old = pd.Series(df_old_clean[value_column].values, index=df_old_clean[target_column]).to_dict()
+                    dict_new = pd.Series(df_new_clean[value_column].values, index=df_new_clean[target_column]).to_dict()
                     
                     # Объединяем все уникальные статьи расходов на листе
                     sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
                     
                     for article in sheet_articles:
-                        # Пропускаем пустые строки или строки итогов (если они называются "Итого", "Всего" и т.д.)
-                        if pd.isna(article) or str(article).strip() == "" or any(word in str(article).lower() for word in ["итого", "всего", "баланс", "результат"]):
+                        # Фильтруем технический мусор и строки итогов
+                        article_str = str(article).strip()
+                        if article_str == "" or any(word in article_str.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
                             continue
                             
-                        val_old = float(dict_old.get(article, 0)) if pd.notna(dict_old.get(article, 0)) else 0.0
-                        val_new = float(dict_new.get(article, 0)) if pd.notna(dict_new.get(article, 0)) else 0.0
+                        # Безопасно переводим значения в числа
+                        try:
+                            val_old = float(dict_old.get(article, 0))
+                        except:
+                            val_old = 0.0
+                            
+                        try:
+                            val_new = float(dict_new.get(article, 0))
+                        except:
+                            val_new = 0.0
                         
                         item_delta = val_new - val_old
-                        # Нам нужно абсолютное влияние (неважно, вырос расход или упал, главное — на какую сумму)
                         abs_delta = abs(item_delta)
                         
                         if abs_delta > 0:
                             all_expenses_changes.append({
                                 "Лист": sheet,
-                                "Статья расходов": article,
+                                "Статья расходов": article_str,
                                 "Было (руб.)": val_old,
                                 "Стало (руб.)": val_new,
                                 "Изменение (руб.)": item_delta,
                                 "Абсолютное влияние (руб.)": abs_delta
                             })
             
-            # Если изменения найдены, формируем финальный ТОП-10
+            # Формируем финальный ТОП-10
             if all_expenses_changes:
                 df_total_changes = pd.DataFrame(all_expenses_changes)
                 
-                # Сортируем по убыванию абсолютного влияния и берем первые 10 строк
+                # Сортируем по убыванию силы численного влияния
                 top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
                 
-                # Удаляем временную колонку абсолютного значения перед показом директору
-                top_10_display = top_10_changes.drop(columns=["Абсолютное влияние (руб.)"]).reset_index(drop=True)
-                top_10_display.index = top_10_display.index + 1  # Чтобы нумерация шла от 1 до 10
+                # Убираем техническую колонку
+                top_10_display = top_10_changes.drop(columns=["Aбсолютное влияние (руб.)"], errors='ignore').reset_index(drop=True)
+                top_10_display.index = top_10_display.index + 1  # Нумерация от 1 до 10
                 
                 st.subheader("📋 Директорский отчет: ТОП-10 главных изменений в статьях")
-                st.write("Ниже представлены 10 статей, изменения по которым сильнее всего отразились на итоговом бюджете предприятия:")
+                st.write(f"Агент проанализировал листы и нашел 10 статей, которые сильнее всего сформировали вашу разницу в **{788451:,.2f} руб.**")
                 
-                # Выводим красивую интерактивную таблицу
+                # Отображение таблицы с форматированием денег
                 st.dataframe(
                     top_10_display.style.format({
                         "Было (руб.)": "{:,.2f}", 
                         "Стало (руб.)": "{:,.2f}", 
-                        "Изменение (руб.)": "{:+,.2f}" # Покажет плюс или минус перед цифрой изменения
+                        "Изменение (руб.)": "{:+,.2f}"
                     }),
                     use_container_width=True
                 )
             else:
-                st.info("📊 Изменений по расходам между отчетами не найдено.")
+                st.info("📊 Изменений по расходам между отчетами с такой структурой не найдено. Проверьте правильность названий листов.")
                 
     except Exception as e:
         st.error(f"⚠️ Произошла ошибка при анализе структуры Excel: {e}")
-        st.info("💡 Подсказка: Проверьте правильность названий ключевых столбцов в левом боковом меню.")
+        st.info("💡 Подсказка: Если финотдел изменил структуру в этом месяце, проверьте параметры в боковом меню.")
 else:
     st.info("Пожалуйста, загрузите оба Excel-файла для выявления ТОП-10 изменений.")
