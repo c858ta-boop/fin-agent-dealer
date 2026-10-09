@@ -54,6 +54,9 @@ if old_file and new_file:
         header_idx = int(header_row)
         pandas_header_index = header_idx - 1
         
+        # Фиксируем искомое название итога в нижнем регистре без лишних пробелов
+        clean_total_target = str(total_row_name).strip().lower().replace('c', 'с').replace('x', 'х')
+        
         # Сканируем каждый общий лист
         for sheet_name in common_sheets:
             # Находим цветные строки через openpyxl на этом листе
@@ -94,12 +97,11 @@ if old_file and new_file:
             
             if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
                 
-                # 🔥 УМНЫЙ ВСЕЯДНЫЙ ПОИСК ИТОГА: убираем жесткую привязку, чистим английские буквы-двойники
+                # Извлекаем общий итог "Всего по ДЦ" с защитой от латиницы и пробелов
                 for i, row in df_old.iterrows():
                     if row[target_column] is not None:
-                        # Заменяем латинские "c" и "x" на русские на случай опечаток бухгалтерии
                         cell_clean_text = str(row[target_column]).strip().lower().replace('c', 'с').replace('x', 'х')
-                        if "всего" in cell_clean_text and "дц" in cell_clean_text:
+                        if clean_total_target == cell_clean_text or clean_total_target in cell_clean_text or ("всего" in cell_clean_text and "дц" in cell_clean_text):
                             try: total_old_dc += float(row[value_column])
                             except: pass
                             total_row_found = True
@@ -107,7 +109,7 @@ if old_file and new_file:
                 for i, row in df_new.iterrows():
                     if row[target_column] is not None:
                         cell_clean_text = str(row[target_column]).strip().lower().replace('c', 'с').replace('x', 'х')
-                        if "всего" in cell_clean_text and "дц" in cell_clean_text:
+                        if clean_total_target == cell_clean_text or clean_total_target in cell_clean_text or ("всего" in cell_clean_text and "дц" in cell_clean_text):
                             try: total_new_dc += float(row[value_column])
                             except: pass
                 
@@ -122,8 +124,13 @@ if old_file and new_file:
                 for article in sheet_articles:
                     article_str = str(article).strip()
                     article_clean = article_str.lower().replace('c', 'с').replace('x', 'х')
-                    if article_str == "" or ("всего" in article_clean and "дц" in article_clean) or any(word in article_clean for word in ["итого", "всего", "баланс", "результат", "свод"]):
+                    
+                    # 🔥 ЗАЩИТА: Название "Всего по ДЦ" пропускаем вперед, а остальные итоги отсекаем
+                    if "всего" in article_clean and "дц" in article_clean:
                         continue
+                    if article_str == "" or any(word in article_clean for word in ["итого", "всего", "баланс", "результат", "свод"]):
+                        continue
+                        
                     try: val_old = float(dict_old.get(article, 0) or 0)
                     except: val_old = 0.0
                     try: val_new = float(dict_new.get(article, 0) or 0)
@@ -172,7 +179,3 @@ if old_file and new_file:
             
             html_preview = "<html><head><meta charset='utf-8'><style>"
             html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
-            html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
-            html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
-            html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
-            html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
