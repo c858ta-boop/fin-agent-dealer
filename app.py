@@ -32,11 +32,10 @@ def is_colored(cell):
             return True
     return False
 
-# Основная логика приложения (полностью линейная без вложенных try-except во избежание SyntaxError)
+# Основная логика приложения
 if old_file and new_file:
     st.success("Файлы успешно загружены! Начинаю факторный анализ...")
     
-    # Клонируем файлы в независимые буферы памяти для стабильного чтения
     old_bytes = old_file.read()
     new_bytes = new_file.read()
     
@@ -54,6 +53,9 @@ if old_file and new_file:
         total_row_found = False
         header_idx = int(header_row)
         pandas_header_index = header_idx - 1
+        
+        # Фиксируем искомое название итога в нижнем регистре без лишних пробелов
+        clean_total_target = str(total_row_name).strip().lower()
         
         # Сканируем каждый общий лист
         for sheet_name in common_sheets:
@@ -95,16 +97,21 @@ if old_file and new_file:
             
             if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
                 
-                # Извлекаем общий итог "Всего по ДЦ" до очистки цвета
+                # УМНЫЙ ПОИСК ИТОГА: убираем жесткое равенство, ищем совпадение текста с очисткой пробелов
                 for i, row in df_old.iterrows():
-                    if row[target_column] is not None and str(row[target_column]).strip().lower() == total_row_name.lower().strip():
-                        try: total_old_dc += float(row[value_column])
-                        except: pass
-                        total_row_found = True
+                    if row[target_column] is not None:
+                        cell_clean_text = str(row[target_column]).strip().lower()
+                        if clean_total_target == cell_clean_text or clean_total_target in cell_clean_text:
+                            try: total_old_dc += float(row[value_column])
+                            except: pass
+                            total_row_found = True
+                            
                 for i, row in df_new.iterrows():
-                    if row[target_column] is not None and str(row[target_column]).strip().lower() == total_row_name.lower().strip():
-                        try: total_new_dc += float(row[value_column])
-                        except: pass
+                    if row[target_column] is not None:
+                        cell_clean_text = str(row[target_column]).strip().lower()
+                        if clean_total_target == cell_clean_text or clean_total_target in cell_clean_text:
+                            try: total_new_dc += float(row[value_column])
+                            except: pass
                 
                 # Отфильтровываем цветные суммирующие строки отделов
                 df_old_clean = df_old.drop(index=list(colored_old_rows), errors='ignore').dropna(subset=[target_column, value_column])
@@ -171,6 +178,3 @@ if old_file and new_file:
             html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
             html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
             html_preview += "</style></head><body><div style='background: white;'>"
-            html_preview += "<h2 style='margin-bottom:15px;'>Финансовый отчет Дилерского Центра</h2>"
-            html_preview += "<p>• Расходы прошлого месяца: <b>" + f"{total_old_dc:,.2f}" + " руб.</b></p>"
-            html_preview += "<p>• Expenses текущего месяца: <b>" + f"{total_new_dc:,.2f}" + " руб.</b></p>"
