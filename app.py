@@ -54,9 +54,6 @@ if old_file and new_file:
         header_idx = int(header_row)
         pandas_header_index = header_idx - 1
         
-        # Фиксируем искомое название итога в нижнем регистре без лишних пробелов
-        clean_total_target = str(total_row_name).strip().lower()
-        
         # Сканируем каждый общий лист
         for sheet_name in common_sheets:
             # Находим цветные строки через openpyxl на этом листе
@@ -97,19 +94,20 @@ if old_file and new_file:
             
             if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
                 
-                # УМНЫЙ ПОИСК ИТОГА: убираем жесткое равенство, ищем совпадение текста с очисткой пробелов
+                # 🔥 УМНЫЙ ВСЕЯДНЫЙ ПОИСК ИТОГА: убираем жесткую привязку, чистим английские буквы-двойники
                 for i, row in df_old.iterrows():
                     if row[target_column] is not None:
-                        cell_clean_text = str(row[target_column]).strip().lower()
-                        if clean_total_target == cell_clean_text or clean_total_target in cell_clean_text:
+                        # Заменяем латинские "c" и "x" на русские на случай опечаток бухгалтерии
+                        cell_clean_text = str(row[target_column]).strip().lower().replace('c', 'с').replace('x', 'х')
+                        if "всего" in cell_clean_text and "дц" in cell_clean_text:
                             try: total_old_dc += float(row[value_column])
                             except: pass
                             total_row_found = True
                             
                 for i, row in df_new.iterrows():
                     if row[target_column] is not None:
-                        cell_clean_text = str(row[target_column]).strip().lower()
-                        if clean_total_target == cell_clean_text or clean_total_target in cell_clean_text:
+                        cell_clean_text = str(row[target_column]).strip().lower().replace('c', 'с').replace('x', 'х')
+                        if "всего" in cell_clean_text and "дц" in cell_clean_text:
                             try: total_new_dc += float(row[value_column])
                             except: pass
                 
@@ -123,7 +121,8 @@ if old_file and new_file:
                 sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
                 for article in sheet_articles:
                     article_str = str(article).strip()
-                    if article_str == "" or any(word in article_str.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
+                    article_clean = article_str.lower().replace('c', 'с').replace('x', 'х')
+                    if article_str == "" or ("всего" in article_clean and "дц" in article_clean) or any(word in article_clean for word in ["итого", "всего", "баланс", "результат", "свод"]):
                         continue
                     try: val_old = float(dict_old.get(article, 0) or 0)
                     except: val_old = 0.0
@@ -177,4 +176,3 @@ if old_file and new_file:
             html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
             html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
             html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
-            html_preview += "</style></head><body><div style='background: white;'>"
