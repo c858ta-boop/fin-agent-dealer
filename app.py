@@ -97,7 +97,7 @@ if old_file and new_file:
             
             if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
                 
-                # Извлекаем общий итог "Всего по ДЦ" с защитой от латиницы и пробелов
+                # 🔥 ИЗВЛЕКАЕМ ИТОГ: Сначала считываем цифры тотала, полностью игнорируя фильтр по цвету
                 for i, row in df_old.iterrows():
                     if row[target_column] is not None:
                         cell_clean_text = str(row[target_column]).strip().lower().replace('c', 'с').replace('x', 'х')
@@ -109,7 +109,7 @@ if old_file and new_file:
                 for i, row in df_new.iterrows():
                     if row[target_column] is not None:
                         cell_clean_text = str(row[target_column]).strip().lower().replace('c', 'с').replace('x', 'х')
-                        if clean_total_target == cell_clean_text or clean_total_target in cell_clean_text or ("всего" in cell_clean_text and "дц" in cell_clean_text):
+                        if clean_total_target == cell_clean_text or clean_total_target in cell_clean_text or ("всеgo" in cell_clean_text and "дц" in cell_clean_text) or ("всего" in cell_clean_text and "дц" in cell_clean_text):
                             try: total_new_dc += float(row[value_column])
                             except: pass
                 
@@ -125,7 +125,7 @@ if old_file and new_file:
                     article_str = str(article).strip()
                     article_clean = article_str.lower().replace('c', 'с').replace('x', 'х')
                     
-                    # 🔥 ЗАЩИТА: Название "Всего по ДЦ" пропускаем вперед, а остальные итоги отсекаем
+                    # Название "Всего по ДЦ" пропускаем вперед (не берем в ТОП-10 статей)
                     if "всего" in article_clean and "дц" in article_clean:
                         continue
                     if article_str == "" or any(word in article_clean for word in ["итого", "всего", "баланс", "результат", "свод"]):
@@ -178,4 +178,3 @@ if old_file and new_file:
             st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
             html_preview = "<html><head><meta charset='utf-8'><style>"
-            html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
