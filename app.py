@@ -143,7 +143,7 @@ if old_file and new_file:
                             "sort_key": abs_delta
                         })
         
-        # Вывод результатов
+        # Вывод результатов в карточки
         dc_delta = total_new_dc - total_old_dc
         st.subheader("📊 Общий финансовый результат по ДЦ")
         c1, c2, c3 = st.columns(3)
@@ -164,20 +164,20 @@ if old_file and new_file:
             top_10_display = top_10_changes.drop(columns=["sort_key"]).reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
             
-            # Функция стилизации таблицы для Streamlit-экрана
+            # Функция стилизации таблицы для Streamlit-экрана (красит всю строку)
             def color_expenses(row):
-                styles = [''] * len(row)
                 delta_val = row['Изменение (руб.)']
-                # Индекс колонки "Изменение (руб.)" равен 3 в отображаемой таблице
                 if delta_val > 0:
-                    styles[3] = 'background-color: #FEE2E2; color: #991B1B;' # Розовый (перерасход)
+                    return ['background-color: #FEE2E2; color: #991B1B;'] * len(row) # Розовый (перерасход)
                 elif delta_val < 0:
-                    styles[3] = 'background-color: #D1FAE5; color: #065F46;' # Зеленый (экономия)
-                return styles
+                    return ['background-color: #D1FAE5; color: #065F46;'] * len(row) # Зеленый (экономия)
+                return [''] * len(row)
             
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
-            st.dataframe(top_10_display.style.format("{:,.2f}", subset=["Было (руб.)", "Стало (руб.)", "Изменение (руб.)"]), use_container_width=True)
-
-            st.write("---")
-            st.subheader("🖨️ Печать и экспорт в PDF")
+            
+            # Безопасное форматирование вывода чисел до 2 знаков с сохранением стилей
+            st.dataframe(
+                top_10_display.style.apply(color_expenses, axis=1).format(
+                    {"Было (руб.)": "{:,.2f}", "Стало (руб.)": "{:,.2f}", "Изменение (руб.)": "{:,.2f}"}
+                ),
