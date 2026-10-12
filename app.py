@@ -160,6 +160,7 @@ if old_file and new_file:
             top_10_display = top_10_changes.drop(columns=["sort_key"]).reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
             
+            # Функция стилизации таблицы для Streamlit-экрана
             def color_expenses(row):
                 delta_val = row['Изменение (руб.)']
                 if delta_val > 0:
@@ -171,8 +172,8 @@ if old_file and new_file:
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
             
-            formatted_display = top_10_display.copy()
-            st.dataframe(formatted_display.style.apply(color_expenses, axis=1).format({"Было (руб.)": "{:,.2f}", "Стало (руб.)": "{:,.2f}", "Изменение (руб.)": "{:,.2f}"}), use_container_width=True)
+            # Отображаем интерактивную таблицу с 2 знаками после запятой
+            st.dataframe(top_10_display.style.apply(color_expenses, axis=1).format({"Было (руб.)": "{:,.2f}", "Стало (руб.)": "{:,.2f}", "Изменение (руб.)": "{:,.2f}"}), use_container_width=True)
             
             st.write("---")
             st.subheader("🖨️ Печать и экспорт в PDF")
