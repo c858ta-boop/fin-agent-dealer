@@ -94,7 +94,7 @@ if old_file and new_file:
             
             if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
                 
-                # Извлекаем общий итог "Всего по ДЦ" с защитой от пробелов и латиницы
+                # Извлекаем общий итог "Всего по ДЦ"
                 clean_total_target = str(total_row_name).strip().lower().replace('c', 'с').replace('x', 'х')
                 
                 for i, row in df_old.iterrows():
@@ -161,19 +161,23 @@ if old_file and new_file:
             base_denom = total_old_dc if total_old_dc > 0 else 1.0
             top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(lambda r: f"{r['Изменение (руб.)'] / base_denom * 100:+.2f}%", axis=1)
             
-            # УДАЛЕНО: Убираем колонку "Лист" и технический sort_key
             top_10_display = top_10_changes.drop(columns=["sort_key"]).reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
             
+            # Функция стилизации таблицы для Streamlit-экрана
+            def color_expenses(row):
+                styles = [''] * len(row)
+                delta_val = row['Изменение (руб.)']
+                # Индекс колонки "Изменение (руб.)" равен 3 в отображаемой таблице
+                if delta_val > 0:
+                    styles[3] = 'background-color: #FEE2E2; color: #991B1B;' # Розовый (перерасход)
+                elif delta_val < 0:
+                    styles[3] = 'background-color: #D1FAE5; color: #065F46;' # Зеленый (экономия)
+                return styles
+            
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
-            st.dataframe(top_10_display, use_container_width=True)
+            st.dataframe(top_10_display.style.apply(color_expenses, axis=1), use_container_width=True)
             
             st.write("---")
             st.subheader("🖨️ Печать и экспорт в PDF")
-            st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
-            
-            # ПОКРАСКА HTML-ФОРМЫ: Исключили упоминание столбца "Лист"
-            html_preview = "<html><head><meta charset='utf-8'><style>"
-            html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
-            html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
