@@ -47,7 +47,7 @@ if old_file and new_file:
     if not common_sheets:
         st.error("❌ Ошибка: В файлах нет листов с одинаковыми названиями!")
     else:
-        all_expenses_changes =
+        all_expenses_changes = []
         total_old_dc = 0.0
         total_new_dc = 0.0
         total_row_found = False
@@ -56,7 +56,6 @@ if old_file and new_file:
         
         # Сканируем каждый общий лист
         for sheet_name in common_sheets:
-            # Находим цветные строки через openpyxl на этом листе
             wb_old_full = openpyxl.load_workbook(BytesIO(old_bytes), data_only=True)
             ws_old_xl = wb_old_full[sheet_name]
             target_col_idx_old = None
@@ -140,7 +139,7 @@ if old_file and new_file:
                             "sort_key": abs_delta
                         })
         
-        # Вывод результатов в карточки (Слово text успешно удалено!)
+        # Вывод карточек результатов
         dc_delta = total_new_dc - total_old_dc
         st.subheader("📊 Общий финансовый результат по ДЦ")
         c1, c2, c3 = st.columns(3)
@@ -161,6 +160,7 @@ if old_file and new_file:
             top_10_display = top_10_changes.drop(columns=["sort_key"]).reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
             
+            # Функция стилизации таблицы для Streamlit-экрана
             def color_expenses(row):
                 delta_val = row['Изменение (руб.)']
                 if delta_val > 0:
@@ -172,8 +172,8 @@ if old_file and new_file:
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
             
-            formatted_display = top_10_display.copy()
-            st.dataframe(formatted_display.style.apply(color_expenses, axis=1).format({"Было (руб.)": "{:,.2f}", "Стало (руб.)": "{:,.2f}", "Изменение (руб.)": "{:,.2f}"}), use_container_width=True)
+            # Корректный вывод датафрейма с 2 знаками после запятой
+            st.dataframe(top_10_display.style.apply(color_expenses, axis=1).format({"Было (руб.)": "{:,.2f}", "Стало (руб.)": "{:,.2f}", "Изменение (руб.)": "{:,.2f}"}), use_container_width=True)
             
             st.write("---")
             st.subheader("🖨️ Печать и экспорт в PDF")
