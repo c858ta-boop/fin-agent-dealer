@@ -13,7 +13,7 @@ with st.sidebar:
     st.header("⚙️ Настройки структуры")
     target_column = st.text_input("Название столбца со статьями расходов:", value="Статья расходов")
     value_column = st.text_input("Название столбца со значениями (суммами):", value="Всего расходы")
-    header_row = st.number_input("Строка с заголовками (в Excel нумерась с 1):", min_value=1, value=2)
+    header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=2)
     total_row_name = st.text_input("Название строки общего итога:", value="Всего по ДЦ")
     st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветовую заливку ячеек.")
 
@@ -56,6 +56,7 @@ if old_file and new_file:
         
         # Сканируем каждый общий лист
         for sheet_name in common_sheets:
+            # Находим цветные строки через openpyxl на этом листе
             wb_old_full = openpyxl.load_workbook(BytesIO(old_bytes), data_only=True)
             ws_old_xl = wb_old_full[sheet_name]
             target_col_idx_old = None
@@ -135,7 +136,6 @@ if old_file and new_file:
                     abs_delta = abs(item_delta)
                     if abs_delta > 0:
                         all_expenses_changes.append({
-                            "Лист": sheet_name,
                             "Статья расходов": article_str,
                             "Было (руб.)": val_old,
                             "Стало (руб.)": val_new,
@@ -161,6 +161,7 @@ if old_file and new_file:
             base_denom = total_old_dc if total_old_dc > 0 else 1.0
             top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes.apply(lambda r: f"{r['Изменение (руб.)'] / base_denom * 100:+.2f}%", axis=1)
             
+            # УДАЛЕНО: Убираем колонку "Лист" и технический sort_key
             top_10_display = top_10_changes.drop(columns=["sort_key"]).reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
             
@@ -172,7 +173,7 @@ if old_file and new_file:
             st.subheader("🖨️ Печать и экспорт в PDF")
             st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
+            # ПОКРАСКА HTML-ФОРМЫ: Исключили упоминание столбца "Лист"
             html_preview = "<html><head><meta charset='utf-8'><style>"
             html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
             html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
-            html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
