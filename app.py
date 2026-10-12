@@ -47,7 +47,8 @@ if old_file and new_file:
     if not common_sheets:
         st.error("❌ Ошибка: В файлах нет листов с одинаковыми названиями!")
     else:
-        all_expenses_changes = []
+        # ЗАЩИТА: инициализируем список через функцию list(), чтобы скобки больше не терялись
+        all_expenses_changes = list()
         total_old_dc = 0.0
         total_new_dc = 0.0
         total_row_found = False
@@ -172,10 +173,8 @@ if old_file and new_file:
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
             
-            # Корректный вывод датафрейма с 2 знаками после запятой
+            # Отображаем интерактивную таблицу с 2 знаками после запятой
             st.dataframe(top_10_display.style.apply(color_expenses, axis=1).format({"Было (руб.)": "{:,.2f}", "Стало (руб.)": "{:,.2f}", "Изменение (руб.)": "{:,.2f}"}), use_container_width=True)
             
             st.write("---")
             st.subheader("🖨️ Печать и экспорт в PDF")
-            st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
-            
