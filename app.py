@@ -177,7 +177,7 @@ if old_file and new_file:
             
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
-            st.dataframe(top_10_display.style.apply(color_expenses, axis=1), use_container_width=True)
-            
+            st.dataframe(top_10_display.style.format("{:,.2f}", subset=["Было (руб.)", "Стало (руб.)", "Изменение (руб.)"]), use_container_width=True)
+
             st.write("---")
             st.subheader("🖨️ Печать и экспорт в PDF")
