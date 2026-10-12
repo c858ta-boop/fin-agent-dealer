@@ -137,9 +137,9 @@ if old_file and new_file:
                     if abs_delta > 0:
                         all_expenses_changes.append({
                             "Статья расходов": article_str,
-                            "Было (руб.)": round(val_old, 2),
-                            "Стало (руб.)": round(val_new, 2),
-                            "Изменение (руб.)": round(item_delta, 2),
+                            "Было (руб.)": val_old,
+                            "Стало (руб.)": val_new,
+                            "Изменение (руб.)": item_delta,
                             "sort_key": abs_delta
                         })
         
@@ -168,15 +168,16 @@ if old_file and new_file:
             def color_expenses(row):
                 styles = [''] * len(row)
                 delta_val = row['Изменение (руб.)']
+                # Индекс колонки "Изменение (руб.)" равен 3 в отображаемой таблице
                 if delta_val > 0:
-                    styles = ['background-color: #FEE2E2; color: #991B1B;'] * len(row) # Розовый (перерасход)
+                    styles[3] = 'background-color: #FEE2E2; color: #991B1B;' # Розовый (перерасход)
                 elif delta_val < 0:
-                    styles = ['background-color: #D1FAE5; color: #065F46;'] * len(row) # Зеленый (экономия)
+                    styles[3] = 'background-color: #D1FAE5; color: #065F46;' # Зеленый (экономия)
                 return styles
             
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
+            st.dataframe(top_10_display.style.apply(color_expenses, axis=1), use_container_width=True)
             
-            # Форматируем вывод копеек (2 знака после запятой)
-            formatted_display = top_10_display.copy()
-            formatted_display["Было (руб.)"] = formatted_display["Было (руб.)"].map('{:,.2f}'.format)
+            st.write("---")
+            st.subheader("🖨️ Печать и экспорт в PDF")
