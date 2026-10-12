@@ -56,7 +56,6 @@ if old_file and new_file:
         
         # Сканируем каждый общий лист
         for sheet_name in common_sheets:
-            # Находим цветные строки через openpyxl на этом листе
             wb_old_full = openpyxl.load_workbook(BytesIO(old_bytes), data_only=True)
             ws_old_xl = wb_old_full[sheet_name]
             target_col_idx_old = None
@@ -85,7 +84,6 @@ if old_file and new_file:
                     if cell and cell.value is not None and is_colored(cell):
                         colored_new_rows.add(r_idx - header_idx - 1)
 
-            # Читаем данные через pandas
             df_old = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_name, header=pandas_header_index)
             df_new = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_name, header=pandas_header_index)
             
@@ -93,8 +91,6 @@ if old_file and new_file:
             df_new.columns = [str(c).strip() for c in df_new.columns]
             
             if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
-                
-                # Извлекаем общий итог "Всего по ДЦ"
                 clean_total_target = str(total_row_name).strip().lower().replace('c', 'с').replace('x', 'х')
                 
                 for i, row in df_old.iterrows():
@@ -112,7 +108,6 @@ if old_file and new_file:
                             try: total_new_dc += float(row[value_column])
                             except: pass
                 
-                # Отфильтровываем цветные суммирующие строки отделов
                 df_old_clean = df_old.drop(index=list(colored_old_rows), errors='ignore').dropna(subset=[target_column, value_column])
                 df_new_clean = df_new.drop(index=list(colored_new_rows), errors='ignore').dropna(subset=[target_column, value_column])
                 
@@ -137,17 +132,16 @@ if old_file and new_file:
                     if abs_delta > 0:
                         all_expenses_changes.append({
                             "Статья расходов": article_str,
-                            "Было (руб.)": val_old,
-                            "Стало (руб.)": val_new,
-                            "Изменение (руб.)": item_delta,
+                            "Было (руб.)": round(val_old, 2),
+                            "Стало (руб.)": round(val_new, 2),
+                            "Изменение (руб.)": round(item_delta, 2),
                             "sort_key": abs_delta
                         })
         
-        # Вывод результатов в карточки
         dc_delta = total_new_dc - total_old_dc
         st.subheader("📊 Общий финансовый результат по ДЦ")
         c1, c2, c3 = st.columns(3)
-        with c1: st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
+        with c1: st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} text руб.")
         with c2: st.metric("Расходы за текущий месяц", f"{total_new_dc:,.2f} руб.")
         with c3: st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
             
@@ -164,20 +158,23 @@ if old_file and new_file:
             top_10_display = top_10_changes.drop(columns=["sort_key"]).reset_index(drop=True)
             top_10_display.index = top_10_display.index + 1
             
-            # Функция стилизации таблицы для Streamlit-экрана (красит всю строку)
             def color_expenses(row):
                 delta_val = row['Изменение (руб.)']
                 if delta_val > 0:
-                    return ['background-color: #FEE2E2; color: #991B1B;'] * len(row) # Розовый (перерасход)
+                    return ['background-color: #FEE2E2; color: #991B1B;'] * len(row)
                 elif delta_val < 0:
-                    return ['background-color: #D1FAE5; color: #065F46;'] * len(row) # Зеленый (экономия)
+                    return ['background-color: #D1FAE5; color: #065F46;'] * len(row)
                 return [''] * len(row)
             
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
             
-            # Безопасное форматирование вывода чисел до 2 знаков с сохранением стилей
-            st.dataframe(
-                top_10_display.style.apply(color_expenses, axis=1).format(
-                    {"Было (руб.)": "{:,.2f}", "Стало (руб.)": "{:,.2f}", "Изменение (руб.)": "{:,.2f}"}
-                ),
+            formatted_display = top_10_display.copy()
+            st.dataframe(formatted_display.style.apply(color_expenses, axis=1).format({"Было (руб.)": "{:,.2f}", "Стало (руб.)": "{:,.2f}", "Изменение (руб.)": "{:,.2f}"}), use_container_width=True)
+            
+            st.write("---")
+            st.subheader("🖨️ Печать и экспорт в PDF")
+            st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
+            
+            html_preview = "<html><head><meta charset='utf-8'><style>"
+            html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
