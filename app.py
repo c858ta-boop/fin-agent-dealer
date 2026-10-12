@@ -15,7 +15,7 @@ with st.sidebar:
     value_column = st.text_input("Название столбца со значениями (суммами):", value="Всего расходы")
     header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=2)
     total_row_name = st.text_input("Название строки общего итога:", value="Всего по ДЦ")
-    st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветовую заливку ячеек.")
+    st.caption("ℹ️ Агент автоматически исключает из ТОП-10 строки, имеющие цветовую заливку ячеек.")
 
 # Блок загрузки файлов
 col1, col2 = st.columns(2)
@@ -32,9 +32,12 @@ def is_colored(cell):
             return True
     return False
 
-# Основная логика приложения (абсолютно линейная структура)
+# Основная логика приложения
 if old_file and new_file:
     st.success("Файлы успешно загружены! Начинаю факторный анализ ДЦ...")
+    
+    pandas_header_index = int(header_row) - 1
+    header_idx = int(header_row)
     
     old_bytes = old_file.read()
     new_bytes = new_file.read()
@@ -51,12 +54,12 @@ if old_file and new_file:
         total_old_dc = 0.0
         total_new_dc = 0.0
         total_row_found = False
-        header_idx = int(header_row)
-        pandas_header_index = header_idx - 1
         
-        # Сканируем каждый общий лист
+        # Коллекторы для диагностики на случай ошибки
+        diagnostic_rows_old = []
+        diagnostic_rows_new = []
+        
         for sheet_name in common_sheets:
-            # Находим цветные строки через openpyxl на этом листе
             wb_old_full = openpyxl.load_workbook(BytesIO(old_bytes), data_only=True)
             ws_old_xl = wb_old_full[sheet_name]
             target_col_idx_old = None
@@ -85,7 +88,6 @@ if old_file and new_file:
                     if cell and cell.value is not None and is_colored(cell):
                         colored_new_rows.add(r_idx - header_idx - 1)
 
-            # Читаем данные через pandas для математических расчетов
             df_old = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_name, header=pandas_header_index)
             df_new = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_name, header=pandas_header_index)
             
@@ -94,18 +96,24 @@ if old_file and new_file:
             
             if target_column in df_old.columns and value_column in df_old.columns and target_column in df_new.columns and value_column in df_new.columns:
                 
-                # Извлекаем общий итог "Всего по ДЦ"
+                # Собираем данные для поиска тотала
                 for i, row in df_old.iterrows():
-                    if row[target_column] is not None and str(row[target_column]).strip().lower() == total_row_name.lower().strip():
-                        try: total_old_dc += float(row[value_column])
-                        except: pass
-                        total_row_found = True
+                    if row[target_column] is not None:
+                        val_str = str(row[target_column]).strip()
+                        diagnostic_rows_old.append(val_str)
+                        if val_str.lower() == total_row_name.lower().strip():
+                            try: total_old_dc += float(row[value_column])
+                            except: pass
+                            total_row_found = True
+                            
                 for i, row in df_new.iterrows():
-                    if row[target_column] is not None and str(row[target_column]).strip().lower() == total_row_name.lower().strip():
-                        try: total_new_dc += float(row[value_column])
-                        except: pass
+                    if row[target_column] is not None:
+                        val_str = str(row[target_column]).strip()
+                        diagnostic_rows_new.append(val_str)
+                        if val_str.lower() == total_row_name.lower().strip():
+                            try: total_new_dc += float(row[value_column])
+                            except: pass
                 
-                # Отфильтровываем цветные суммирующие строки отделов
                 df_old_clean = df_old.drop(index=list(colored_old_rows), errors='ignore').dropna(subset=[target_column, value_column])
                 df_new_clean = df_new.drop(index=list(colored_new_rows), errors='ignore').dropna(subset=[target_column, value_column])
                 
@@ -134,7 +142,6 @@ if old_file and new_file:
                             "sort_key": abs_delta
                         })
         
-        # Вывод финансового результата ДЦ
         dc_delta = total_new_dc - total_old_dc
         st.subheader("📊 Общий финансовый результат по ДЦ")
         c1, c2, c3 = st.columns(3)
@@ -144,6 +151,12 @@ if old_file and new_file:
             
         if not total_row_found:
             st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах.")
+            
+            # ВЫВОД СИСТЕМЫ САМОДИАГНОСТИКИ ПОД ПРЕДУПРЕЖДЕНИЕМ
+            with st.expander("🔍 Посмотреть, какие названия строк нашёл ИИ в файлах (Самодиагностика)"):
+                st.write("**Последние 10 строк в Старом файле (Август):**", diagnostic_rows_old[-10:] if diagnostic_rows_old else "Пусто")
+                st.write("**Последние 10 строк в Новом файле (Сентябрь):**", diagnostic_rows_new[-10:] if diagnostic_rows_new else "Пусто")
+                st.info("💡 Сравните эти строки. Вы сразу увидите, если финотдел написал 'Всего по ДЦ ' с пробелом или изменил формулировку.")
         
         if all_expenses_changes:
             df_total_changes = pd.DataFrame(all_expenses_changes)
@@ -160,16 +173,10 @@ if old_file and new_file:
             
             st.write("---")
             st.subheader("🖨️ Печать и экспорт в PDF")
-            st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
-            # Чистая сборка HTML без использования внутренних f-строк во избежание SyntaxError со скобками CSS
             html_preview = "<html><head><meta charset='utf-8'><style>"
             html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
             html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
             html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
             html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
             html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
-            html_preview += "</style></head><body><div style='background: white;'>"
-            html_preview += "<h2>Финансовый отчет Дилерского Центра</h2>"
-            html_preview += "<p>• Расходы прошлого месяца: <b>" + f"{total_old_dc:,.2f}" + " руб.</b></p>"
-            html_preview += "<p>• Расходы текущего месяца: <b>" + f"{total_new_dc:,.2f}" + " руб.</b></p>"
