@@ -45,17 +45,17 @@ if old_file and new_file:
     wb_old = openpyxl.load_workbook(BytesIO(old_bytes), data_only=True, read_only=True)
     wb_new = openpyxl.load_workbook(BytesIO(new_bytes), data_only=True, read_only=True)
     
-    # 🧠 АВТО-ВЫБОР ЛИСТА: Всегда берем первый лист в книге, как бы он ни назывался
+    # Автоматически берем самые первые листы из книг
     sheet_old = wb_old.sheetnames[0]
     sheet_new = wb_new.sheetnames[0]
     
-    all_expenses_changes =
+    all_expenses_changes = []
     total_old_dc = 0.0
     total_new_dc = 0.0
     total_row_found = False
     
-    diagnostic_rows_old =
-    diagnostic_rows_new =
+    diagnostic_rows_old = []
+    diagnostic_rows_new = []
     
     # Находим цветные строки через openpyxl на первом листе старого файла
     wb_old_full = openpyxl.load_workbook(BytesIO(old_bytes), data_only=True)
