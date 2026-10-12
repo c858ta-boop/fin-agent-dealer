@@ -169,15 +169,14 @@ if old_file and new_file:
                 styles = [''] * len(row)
                 delta_val = row['Изменение (руб.)']
                 if delta_val > 0:
-                    styles[3] = 'background-color: #FEE2E2; color: #991B1B;' # Розовый (перерасход)
+                    styles = ['background-color: #FEE2E2; color: #991B1B;'] * len(row) # Розовый (перерасход)
                 elif delta_val < 0:
-                    styles[3] = 'background-color: #D1FAE5; color: #065F46;' # Зеленый (экономия)
+                    styles = ['background-color: #D1FAE5; color: #065F46;'] * len(row) # Зеленый (экономия)
                 return styles
             
             st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
             st.write("Суммирующие строки отделов отфильтрованы по цвету заливки ячеек.")
             
-            # Форматируем вывод копеек на экране
+            # Форматируем вывод копеек (2 знака после запятой)
             formatted_display = top_10_display.copy()
             formatted_display["Было (руб.)"] = formatted_display["Было (руб.)"].map('{:,.2f}'.format)
-            formatted_display["Стало (руб.)"] = formatted_display["Стало (руб.)"].map('{:,.2f}'.format)
