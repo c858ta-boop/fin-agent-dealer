@@ -47,7 +47,7 @@ if old_file and new_file:
     if not common_sheets:
         st.error("❌ Ошибка: В файлах нет листов с одинаковыми названиями!")
     else:
-        all_expenses_changes = []
+        all_expenses_changes =
         total_old_dc = 0.0
         total_new_dc = 0.0
         total_row_found = False
@@ -56,6 +56,7 @@ if old_file and new_file:
         
         # Сканируем каждый общий лист
         for sheet_name in common_sheets:
+            # Находим цветные строки через openpyxl на этом листе
             wb_old_full = openpyxl.load_workbook(BytesIO(old_bytes), data_only=True)
             ws_old_xl = wb_old_full[sheet_name]
             target_col_idx_old = None
@@ -84,6 +85,7 @@ if old_file and new_file:
                     if cell and cell.value is not None and is_colored(cell):
                         colored_new_rows.add(r_idx - header_idx - 1)
 
+            # Читаем данные через pandas
             df_old = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_name, header=pandas_header_index)
             df_new = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_name, header=pandas_header_index)
             
@@ -138,10 +140,11 @@ if old_file and new_file:
                             "sort_key": abs_delta
                         })
         
+        # Вывод результатов в карточки (Слово text успешно удалено!)
         dc_delta = total_new_dc - total_old_dc
         st.subheader("📊 Общий финансовый результат по ДЦ")
         c1, c2, c3 = st.columns(3)
-        with c1: st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} text руб.")
+        with c1: st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
         with c2: st.metric("Расходы за текущий месяц", f"{total_new_dc:,.2f} руб.")
         with c3: st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
             
@@ -176,5 +179,3 @@ if old_file and new_file:
             st.subheader("🖨️ Печать и экспорт в PDF")
             st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
-            html_preview = "<html><head><meta charset='utf-8'><style>"
-            html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
